@@ -63,24 +63,28 @@ const session = await response.json();
   ISO 8601 timestamp for the last time the session record was modified.
 </ResponseField>
 
-<ResponseField name="authorizeNetTransactionId" type="string | null">
+<ResponseField name="authorizeNetToken" type="string | undefined">
+  The short-lived Authorize.Net hosted payment page token. Present on sessions in `pending` status; not included once the session advances past the checkout phase.
+</ResponseField>
+
+<ResponseField name="authorizeNetTransactionId" type="string | undefined">
   The Authorize.Net transaction ID. Populated after the bridge processes an approved webhook event.
 </ResponseField>
 
-<ResponseField name="authorizeNetAuthCode" type="string | null">
+<ResponseField name="authorizeNetAuthCode" type="string | undefined">
   The authorization code returned by Authorize.Net for the approved transaction.
 </ResponseField>
 
-<ResponseField name="authorizeNetResponseCode" type="string | null">
+<ResponseField name="authorizeNetResponseCode" type="string | undefined">
   The numeric response code from Authorize.Net. A value of `"1"` indicates an approved transaction.
 </ResponseField>
 
-<ResponseField name="lastError" type="string | null">
-  Human-readable error message. Populated when `status` is `"error"`. Null otherwise.
+<ResponseField name="lastError" type="string | undefined">
+  Human-readable error message. Populated when `status` is `"error"`. Not present otherwise.
 </ResponseField>
 
-<ResponseField name="repairDeskPaymentRecordedAt" type="string | null">
-  ISO 8601 timestamp for when the bridge successfully recorded the payment in RepairDesk. Null until `status` reaches `"recorded"`.
+<ResponseField name="repairDeskPaymentRecordedAt" type="string | undefined">
+  ISO 8601 timestamp for when the bridge successfully recorded the payment in RepairDesk. Not present until `status` reaches `"recorded"`.
 </ResponseField>
 
 ### Session status values
@@ -109,7 +113,6 @@ const session = await response.json();
   "authorizeNetTransactionId": "12345678",
   "authorizeNetAuthCode": "ABC123",
   "authorizeNetResponseCode": "1",
-  "lastError": null,
   "repairDeskPaymentRecordedAt": "2024-01-15T10:02:30.000Z"
 }
 ```

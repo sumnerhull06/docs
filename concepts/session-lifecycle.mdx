@@ -38,7 +38,7 @@ A fully resolved session looks like this:
 }
 ```
 
-The optional fields `authorizeNetTransactionId`, `authorizeNetAuthCode`, `authorizeNetResponseCode`, and `repairDeskPaymentRecordedAt` are only populated after the Authorize.Net webhook is received and processed. The `authorizeNetToken` field (the raw hosted page token) is stored internally but is not included in session API responses.
+The optional fields `authorizeNetTransactionId`, `authorizeNetAuthCode`, `authorizeNetResponseCode`, and `repairDeskPaymentRecordedAt` are only populated after the Authorize.Net webhook is received and processed. The `authorizeNetToken` field is present on sessions in `pending` status (when the checkout URL is active), but is not shown above because it is not meaningful once a session has reached a terminal state.
 
 ## Polling for status
 

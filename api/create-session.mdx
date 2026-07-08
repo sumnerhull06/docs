@@ -23,6 +23,10 @@ Content-Type: application/json
   The amount to charge in dollars. Must be greater than zero and must not exceed the current invoice due balance. Defaults to the full due amount if omitted.
 </ParamField>
 
+<ParamField body="customerId" type="string">
+  RepairDesk customer ID. When provided, the bridge fetches the full customer profile from RepairDesk and uses it to populate all billing fields on the Authorize.Net form. Explicit `customerEmail`, `customerFirstName`, `customerLastName`, and `customerPhone` values always take precedence over the fetched profile.
+</ParamField>
+
 <ParamField body="customerEmail" type="string">
   Customer email address to pre-fill on the Authorize.Net hosted checkout form. Falls back to the email on the RepairDesk invoice if omitted.
 </ParamField>
@@ -33,6 +37,10 @@ Content-Type: application/json
 
 <ParamField body="customerLastName" type="string">
   Customer last name for the Authorize.Net billing section. Falls back to the name on the RepairDesk invoice if omitted.
+</ParamField>
+
+<ParamField body="customerPhone" type="string">
+  Customer phone number to pre-fill in the Authorize.Net billing section. Falls back to the phone on the RepairDesk customer profile if omitted.
 </ParamField>
 
 ## Example request
@@ -47,7 +55,8 @@ curl -X POST https://your-bridge.example.com/api/payments/sessions \
     "amount": 99.99,
     "customerEmail": "customer@example.com",
     "customerFirstName": "Alex",
-    "customerLastName": "Smith"
+    "customerLastName": "Smith",
+    "customerPhone": "555-867-5309"
   }'
 ```
 
@@ -60,7 +69,8 @@ const response = await fetch('https://your-bridge.example.com/api/payments/sessi
     amount: 99.99,
     customerEmail: 'customer@example.com',
     customerFirstName: 'Alex',
-    customerLastName: 'Smith'
+    customerLastName: 'Smith',
+    customerPhone: '555-867-5309'
   })
 });
 const session = await response.json();
@@ -109,10 +119,12 @@ const session = await response.json();
 
 ## Error responses
 
-| Status | Cause |
-|---|---|
-| `400 Bad Request` | `invoiceId` was not provided, the invoice has no outstanding balance, or the requested `amount` exceeds the invoice due balance |
-| `502 Bad Gateway` | The bridge could not reach RepairDesk or Authorize.Net — check your `.env` credentials and upstream connectivity |
+| Status | Error message | Cause |
+|---|---|---|
+| `400 Bad Request` | `invoiceId is required` | `invoiceId` was not provided or was empty |
+| `400 Bad Request` | `Invoice does not have an outstanding balance` | The invoice due balance is zero or negative |
+| `400 Bad Request` | `Requested amount exceeds current invoice balance of {balance}` | The supplied `amount` is greater than the invoice's current due balance |
+| `502 Bad Gateway` | _(upstream error message)_ | The bridge could not reach RepairDesk or Authorize.Net — check your `.env` credentials and upstream connectivity |
 
 <Tip>
   After creating a session, open the `checkoutUrl` in the customer's browser. Once the customer completes payment, Authorize.Net fires a webhook to the bridge, which records the payment in RepairDesk and moves the session to `recorded` status. Poll `statusUrl` to detect this transition.

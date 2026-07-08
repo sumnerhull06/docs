@@ -1,7 +1,7 @@
 ---
 title: "RepairDesk Bridge REST API reference overview"
 sidebarTitle: "Overview"
-description: "Complete reference for all REST endpoints exposed by the RepairDesk Authorize.Net Bridge, with authentication, base URLs, and common patterns."
+description: "Complete reference for all REST endpoints exposed by the RepairDesk Authorize.Net Bridge, with authentication, base URLs, and common error patterns."
 ---
 
 The RepairDesk Authorize.Net Bridge exposes a small REST API for creating payment sessions, checking session status, and receiving Authorize.Net webhook events. All endpoints accept and return JSON unless otherwise noted — the `/launch` endpoint and a handful of browser-facing routes return HTML pages instead.
@@ -18,10 +18,10 @@ Set `APP_BASE_URL` in your `.env` file to the public URL where your bridge is re
 
 The bridge API does not require authentication of its own — it is designed as a server-to-server or staff-side service. Protect the bridge behind a firewall or reverse proxy if you do not want it publicly accessible.
 
-The one exception is the `/webhooks/authorize-net` endpoint: it validates the Authorize.Net `x-anet-signature` HMAC-SHA512 header automatically on every incoming request. See the [webhook reference](/api/webhooks) for details.
+The one exception is the `/webhooks/authorize-net` endpoint: when `AUTHORIZE_NET_SIGNATURE_KEY` is configured, the bridge validates the Authorize.Net `x-anet-signature` HMAC-SHA512 header on every incoming request. See the [webhook reference](/api/webhooks) for details.
 
 <Note>
-  Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to enable webhook signature verification. Requests without a valid signature will receive a `401 Unauthorized` response.
+  Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to enable webhook signature verification. When the key is set, requests with a missing or invalid signature receive a `401 Unauthorized` response. If the key is not set, the bridge accepts all incoming webhook requests without verification.
 </Note>
 
 ## Content type
@@ -61,6 +61,17 @@ All `POST` requests must include the `Content-Type: application/json` header. Th
   </Card>
 </CardGroup>
 
+## Additional endpoints
+
+The following endpoints are part of the bridge but do not have dedicated reference pages. They are browser-facing and operate on HTML responses.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/checkout/:sessionId` | Renders the Authorize.Net hosted checkout launcher page for an existing session. Used by `checkoutUrl` links returned from `POST /api/payments/sessions`. |
+| `GET` | `/payments/return` | Return URL that Authorize.Net redirects the customer to after a completed or attempted payment. Accepts a `sessionId` query parameter and renders a polling status page. |
+| `GET` | `/payments/cancel` | Cancel URL that Authorize.Net redirects the customer to when they click the cancel button. Marks the session as `canceled` and renders a confirmation page. |
+| `GET` | `/oauth/repairdesk/callback` | OAuth callback handler for RepairDesk authorization. Displays the returned authorization code so it can be exchanged for API tokens during initial setup. |
+
 ## Health check
 
 ```
@@ -75,7 +86,7 @@ Returns `{"ok": true}` when the bridge is running. No authentication is required
 
 ## Error responses
 
-All errors return a JSON object with a single `error` string field describing what went wrong.
+All API errors return a JSON object with a single `error` string field describing what went wrong. Browser-facing endpoints (`/launch`, `/checkout/:sessionId`, `/payments/return`, `/payments/cancel`) return an HTML error page instead of JSON.
 
 ```json
 { "error": "invoiceId is required" }
@@ -84,6 +95,7 @@ All errors return a JSON object with a single `error` string field describing wh
 | Status code | Meaning |
 |---|---|
 | `400 Bad Request` | Missing or invalid request parameters (e.g. `invoiceId` not provided, amount exceeds invoice balance) |
-| `404 Not Found` | The requested resource does not exist (e.g. unknown `sessionId`) |
 | `401 Unauthorized` | Webhook signature verification failed |
+| `404 Not Found` | The requested resource does not exist (e.g. unknown `sessionId`) |
+| `500 Internal Server Error` | An unexpected error occurred during webhook processing |
 | `502 Bad Gateway` | An upstream API call to RepairDesk or Authorize.Net failed |

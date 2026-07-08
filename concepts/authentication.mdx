@@ -25,7 +25,11 @@ You can find your API key in your RepairDesk account under **Settings → API**.
 
 ### OAuth 2.0
 
-If your RepairDesk account uses OAuth 2.0, set the OAuth variables instead. The bridge uses the refresh token to obtain a new access token automatically whenever the current one is within 15 seconds of expiry — you do not need to manage token rotation yourself.
+If your RepairDesk account uses OAuth 2.0, set the OAuth variables instead. The bridge refreshes the access token automatically when it is about to expire — you do not need to manage token rotation yourself.
+
+If you have a long-lived access token but no refresh credentials, set `REPAIRDESK_OAUTH_ACCESS_TOKEN` on its own and the bridge will use it as a Bearer token without attempting to refresh it.
+
+If you have a refresh token and client credentials, the bridge will obtain and rotate access tokens automatically:
 
 ```bash
 # .env
@@ -33,11 +37,14 @@ REPAIRDESK_BASE_URL=https://api.repairdesk.co/api/web/v1
 REPAIRDESK_OAUTH_CLIENT_ID=your_oauth_client_id
 REPAIRDESK_OAUTH_CLIENT_SECRET=your_oauth_client_secret
 REPAIRDESK_OAUTH_REFRESH_TOKEN=your_refresh_token
-# Optional — defaults shown below
+# Optional
+REPAIRDESK_OAUTH_ACCESS_TOKEN=your_initial_access_token
 REPAIRDESK_OAUTH_TOKEN_PATH=/oauth2/token
 REPAIRDESK_OAUTH_EXPIRES_IN=3600
 REPAIRDESK_PAYMENT_METHOD_ID=42
 ```
+
+`REPAIRDESK_OAUTH_TOKEN_PATH` defaults to `/oauth2/token` if not set. `REPAIRDESK_OAUTH_EXPIRES_IN` sets the token lifetime in seconds; omit it to let the bridge use the value returned by the token endpoint.
 
 <Note>
   If both `REPAIRDESK_API_KEY` and the OAuth variables are set, OAuth takes precedence. The bridge uses the `Authorization: Bearer <token>` header and skips the API key entirely when OAuth credentials are present.

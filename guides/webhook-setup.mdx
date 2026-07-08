@@ -1,7 +1,7 @@
 ---
-title: "Configure Authorize.Net webhooks to sync payments"
+title: "Configure Authorize.Net webhooks to record payments"
 sidebarTitle: "Webhook Setup"
-description: "Set up Authorize.Net webhooks to automatically record captured payments back into RepairDesk after each successful transaction."
+description: "Set up Authorize.Net webhooks so the bridge automatically records each captured payment back into RepairDesk after every successful transaction."
 ---
 
 Webhooks are how Authorize.Net notifies your bridge that a payment was captured. Without a webhook configured, the bridge has no reliable signal to write the payment back into RepairDesk — the browser return URL alone is not treated as a source of truth. Complete the steps below to connect your Authorize.Net account to the bridge and enable automatic payment recording.

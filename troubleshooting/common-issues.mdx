@@ -1,7 +1,7 @@
 ---
-title: "Troubleshoot common RepairDesk bridge issues"
+title: "Troubleshoot common RepairDesk Authorize.Net Bridge issues"
 sidebarTitle: "Common Issues"
-description: "Diagnose and fix the most frequent problems with the RepairDesk Authorize.Net Bridge, from auth errors to webhook failures."
+description: "Diagnose and fix the most frequent problems with the RepairDesk Authorize.Net Bridge, including auth errors, pending sessions, and webhook failures."
 ---
 
 If you run into a problem with the bridge, this guide covers the most common issues and how to resolve them. The sections below are organized by area — authentication, payment sessions, checkout and webhook delivery, and the Chrome extension — so you can jump straight to the symptoms you're seeing.
@@ -75,10 +75,14 @@ If you run into a problem with the bridge, this guide covers the most common iss
 
   **Check the following:**
 
-  1. **Is the bridge publicly reachable?** Authorize.Net must be able to POST to your webhook URL over the public internet. A `localhost` URL will never receive webhooks from Authorize.Net.
-  2. **Is the webhook endpoint registered correctly?** In your Authorize.Net dashboard under **Account → Settings → Webhooks**, confirm the endpoint is set to `https://your-bridge-domain/webhooks/authorize-net`.
-  3. **Does the signature key match?** A mismatched `AUTHORIZE_NET_SIGNATURE_KEY` causes the bridge to reject the webhook with a 401, which Authorize.Net may log as a delivery failure.
-  4. **Check the Authorize.Net delivery log.** In the Authorize.Net dashboard, open **Webhooks** and inspect the delivery history for your endpoint to see the HTTP response the bridge returned.
+  1. **Is the bridge running?** Confirm the bridge process is up by calling the health endpoint — a healthy bridge responds with `{"ok": true}`:
+     ```bash
+     curl https://your-bridge-domain/health
+     ```
+  2. **Is the bridge publicly reachable?** Authorize.Net must be able to POST to your webhook URL over the public internet. A `localhost` URL will never receive webhooks from Authorize.Net.
+  3. **Is the webhook endpoint registered correctly?** In your Authorize.Net dashboard under **Account → Settings → Webhooks**, confirm the endpoint is set to `https://your-bridge-domain/webhooks/authorize-net`.
+  4. **Does the signature key match?** A mismatched `AUTHORIZE_NET_SIGNATURE_KEY` causes the bridge to reject the webhook with a 401, which Authorize.Net may log as a delivery failure. The value in your `.env` must be an exact copy of the **Signature Key** shown in your Authorize.Net dashboard under **Account → API Credentials & Keys**.
+  5. **Check the Authorize.Net delivery log.** In the Authorize.Net dashboard, open **Webhooks** and inspect the delivery history for your endpoint to see the HTTP response the bridge returned.
 
   <Note>
     For local development, use a tunnel tool such as [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to expose your bridge and then update the webhook endpoint in Authorize.Net to point to the tunnel URL.

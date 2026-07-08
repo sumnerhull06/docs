@@ -1,5 +1,5 @@
 ---
-title: "What is the RepairDesk Authorize.Net Bridge?"
+title: "Introduction to the RepairDesk Authorize.Net Bridge"
 sidebarTitle: "Introduction"
 description: "Learn how the RepairDesk Authorize.Net Bridge connects your repair shop invoices to secure hosted checkout and auto-records payments."
 ---
@@ -21,6 +21,18 @@ The entire payment flow completes in three steps.
     Once Authorize.Net approves the transaction, it fires a webhook to `POST /webhooks/authorize-net` on your bridge. The bridge verifies the event, marks the session as paid, and calls `POST /invoices/{invoiceId}/payments` on the RepairDesk API to record the payment. Each session is recorded exactly once, preventing duplicate charges even if the webhook is delivered more than once.
   </Step>
 </Steps>
+
+## Launch models
+
+Because RepairDesk does not natively expose a custom payment gateway extension point, the bridge supports three ways to trigger a checkout from inside RepairDesk.
+
+| Model | How it works |
+|---|---|
+| **Direct link** | A link embedded in an invoice email, SMS, or RepairDesk note points the customer or staff member to `GET /launch?invoiceId=<id>`. The bridge creates the session server-side and redirects directly into Authorize.Net hosted checkout — no separate API call required. |
+| **Staff launcher** | A staff member opens the bridge URL manually (or via a bookmark) with the invoice ID in the query string. This is useful for front-desk workflows where staff handle payment on behalf of the customer. |
+| **Injected browser button** | A Chrome extension (MV3) or Tampermonkey-compatible userscript injects an **Authorize.Net Pay** button directly into RepairDesk POS pages. When clicked, it opens `/launch?invoiceId=<id>` on the bridge in a new tab, giving staff an in-app payment button without any RepairDesk backend changes. |
+
+All three models converge on the same payment session flow — they differ only in how the session URL reaches the browser.
 
 ## Key features
 

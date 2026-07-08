@@ -36,16 +36,18 @@ The bridge acts on the following three event types. Any other event type is ackn
 | `net.authorize.payment.priorAuthCapture.created` | Previously authorized transaction captured |
 | `net.authorize.payment.capture.created` | Explicit capture of an authorized transaction |
 
-All other event types receive a `202 Accepted` response with `{ "received": true, "ignored": true }`.
+Any other event type receives a `202 Accepted` response with `{ "received": true, "ignored": true, "reason": "Unhandled event type <eventType>" }`.
 
 ## Signature verification
 
 The bridge validates the `x-anet-signature` header on every incoming request using HMAC-SHA512. Authorize.Net sends this header automatically when you have a signature key configured on your webhook endpoint.
 
-Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to the value shown in your Authorize.Net webhook settings. The bridge computes its own HMAC over the raw request body and compares it to the header value. Requests with a missing or invalid signature receive a `401 Unauthorized` response and are not processed.
+Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to the value shown in your Authorize.Net webhook settings. The bridge computes its own HMAC over the raw request body and compares it to the header value (after stripping the `sha512=` prefix). Requests with a missing or invalid signature receive a `401 Unauthorized` response and are not processed.
+
+If `AUTHORIZE_NET_SIGNATURE_KEY` is not set, the bridge skips signature verification entirely and accepts all incoming webhook requests.
 
 <Warning>
-  Do not expose this endpoint publicly without signature verification enabled. Without it, any client that can reach your bridge can forge a payment event and cause the bridge to record a fraudulent payment in RepairDesk. Set `AUTHORIZE_NET_SIGNATURE_KEY` in `.env` before enabling the webhook in Authorize.Net.
+  Do not leave `AUTHORIZE_NET_SIGNATURE_KEY` unset in production. Without it, the bridge accepts all webhook requests without any verification, meaning any client that can reach your bridge URL can trigger a payment recording in RepairDesk. Set `AUTHORIZE_NET_SIGNATURE_KEY` in `.env` before enabling the webhook in Authorize.Net.
 </Warning>
 
 ## Request body
@@ -95,10 +97,38 @@ When the bridge successfully processes the event and records the payment in Repa
   The final session status after processing. For a successful payment sync this will be `"recorded"`.
 </ResponseField>
 
+## Ignored event responses — 202 Accepted
+
+When the bridge receives a webhook it cannot or should not act on, it responds with `202 Accepted` and an ignored payload. This happens in two cases:
+
+**Missing transaction ID** — the `payload.id` field was absent:
+
+```json
+{ "received": true, "ignored": true, "reason": "Missing transaction id" }
+```
+
+**Unhandled event type** — the `eventType` does not match any of the three handled capture types:
+
+```json
+{ "received": true, "ignored": true, "reason": "Unhandled event type net.authorize.payment.void.created" }
+```
+
+<ResponseField name="received" type="boolean">
+  Always `true`.
+</ResponseField>
+
+<ResponseField name="ignored" type="boolean">
+  Always `true` for ignored events.
+</ResponseField>
+
+<ResponseField name="reason" type="string">
+  Human-readable explanation of why the event was ignored.
+</ResponseField>
+
 ## Error responses
 
 | Status | Cause |
 |---|---|
-| `401 Unauthorized` | The `x-anet-signature` header is missing or does not match the expected HMAC value |
-| `202 Accepted` | Event received but ignored — either `payload.id` was missing or the event type is not a handled capture type |
+| `401 Unauthorized` | The `x-anet-signature` header is missing or does not match the expected HMAC value (only when `AUTHORIZE_NET_SIGNATURE_KEY` is set) |
+| `202 Accepted` | Event received but ignored — `payload.id` was missing or the event type is not a handled capture type |
 | `500 Internal Server Error` | An unexpected error occurred during transaction lookup or RepairDesk payment recording |

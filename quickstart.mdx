@@ -1,7 +1,7 @@
 ---
 title: "Get Started with the RepairDesk Authorize.Net Bridge"
 sidebarTitle: "Quickstart"
-description: "Install, configure, and make your first Authorize.Net payment through RepairDesk in under 10 minutes."
+description: "Clone the bridge, set your RepairDesk and Authorize.Net credentials, and process your first hosted checkout payment in under 10 minutes."
 ---
 
 This guide walks you through cloning the bridge, wiring up your credentials, and processing a real payment session from start to finish. By the end you will have a running bridge, a completed Authorize.Net checkout, and a payment recorded in RepairDesk — all in under ten minutes.
@@ -92,11 +92,14 @@ This guide walks you through cloning the bridge, wiring up your credentials, and
       }'
     ```
 
-    The bridge creates a local session, requests a hosted payment token from Authorize.Net, and responds with:
+    The bridge creates a local session, requests a hosted payment token from Authorize.Net, and responds with HTTP 201:
 
     ```json
     {
       "sessionId": "sess_a1b2c3d4",
+      "invoiceId": "12345",
+      "amount": 99.99,
+      "authorizeNetToken": "<hosted-payment-token>",
       "checkoutUrl": "http://localhost:3000/checkout/sess_a1b2c3d4",
       "statusUrl": "http://localhost:3000/api/payments/sessions/sess_a1b2c3d4"
     }

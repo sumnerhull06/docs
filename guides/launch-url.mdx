@@ -1,10 +1,10 @@
 ---
 title: "Launch checkout directly with the bridge launch URL"
 sidebarTitle: "Launch URL"
-description: "Use the /launch endpoint to create a payment session and redirect to Authorize.Net hosted checkout in a single step from any link or button."
+description: "Use the /launch endpoint to create a payment session and open the Authorize.Net hosted checkout in a single browser navigation from any link or button."
 ---
 
-The `/launch` endpoint is the simplest way to open the Authorize.Net hosted checkout for a RepairDesk invoice. Pass the invoice ID as a query parameter and the bridge handles everything else — it fetches the invoice, validates the outstanding balance, creates a payment session, and immediately redirects the browser to the Authorize.Net hosted checkout page. No client-side API call, no session token management, and no extra round trips are required.
+The `/launch` endpoint is the simplest way to open the Authorize.Net hosted checkout for a RepairDesk invoice. Pass the invoice ID as a query parameter and the bridge handles everything else — it fetches the invoice, validates the outstanding balance, creates a payment session, and returns an HTML page that automatically submits the payment form to Authorize.Net after a brief 250 ms delay. No client-side API call, no session token management, and no extra round trips are required.
 
 ## Basic Usage
 
@@ -12,14 +12,16 @@ The `/launch` endpoint is the simplest way to open the Authorize.Net hosted chec
 GET https://your-bridge.example.com/launch?invoiceId=12345
 ```
 
-The bridge fetches invoice `12345` from RepairDesk, creates a payment session for the full due balance, and redirects the browser to the Authorize.Net hosted payment form. The customer sees the payment page within a single navigation.
+The bridge fetches invoice `12345` from RepairDesk, creates a payment session for the full due balance, and returns an HTML page that automatically submits to the Authorize.Net hosted payment form after 250 ms. The customer sees the payment page within a single navigation.
 
 ## All Query Parameters
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `invoiceId` | string | One of `invoiceId` / `ticketId` required | RepairDesk invoice ID to charge. |
-| `ticketId` | string | One of `invoiceId` / `ticketId` required | RepairDesk ticket ID. The bridge resolves it to an invoice before creating the session. |
+| `invoiceId` | string | At least one invoice identifier required | RepairDesk invoice ID to charge. Tried first as a direct invoice lookup. |
+| `recordId` | string | At least one invoice identifier required | Alternative invoice ID parameter. Tried as a direct invoice lookup if `invoiceId` is not provided. |
+| `refId` | string | At least one invoice identifier required | Alternative invoice ID parameter. Tried as a direct invoice lookup if neither `invoiceId` nor `recordId` resolves. |
+| `ticketId` | string | At least one invoice identifier required | RepairDesk ticket ID. Used as a fallback when no direct invoice ID resolves — the bridge looks up the ticket and extracts its associated invoice ID. |
 | `amount` | number | Optional | Override the charged amount. Must not exceed the invoice's current due balance. |
 | `customerEmail` | string | Optional | Pre-fills the email address field on the hosted checkout form. |
 | `customerFirstName` | string | Optional | Pre-fills the first name on the hosted checkout form. |
@@ -27,9 +29,14 @@ The bridge fetches invoice `12345` from RepairDesk, creates a payment session fo
 | `customerPhone` | string | Optional | Pre-fills the phone number on the hosted checkout form. |
 | `customerId` | string | Optional | RepairDesk customer ID. The bridge fetches the customer profile and uses it to pre-fill all available billing fields. |
 
-## Ticket Resolution
+## Invoice Resolution Order
 
-When you pass `ticketId` instead of `invoiceId`, the bridge calls the RepairDesk tickets API, retrieves the ticket record, and searches the response for an associated invoice ID. It checks the following fields in order: `invoice_id`, `invoiceId`, `invoiceid`, `order_id`, `orderId`, `sale_id`, `saleId`. The first value that resolves to a valid RepairDesk invoice is used.
+The bridge tries to resolve an invoice ID from the supplied parameters in the following order, stopping as soon as it finds a valid invoice:
+
+1. **`invoiceId`** — validated directly against the RepairDesk invoice API.
+2. **`recordId`** — validated as a direct invoice ID if `invoiceId` was not provided or did not resolve.
+3. **`refId`** — validated as a direct invoice ID if the previous two did not resolve.
+4. **`ticketId`** — only used if no direct invoice ID resolved. The bridge calls the RepairDesk tickets API, retrieves the ticket record, and searches the response for an associated invoice ID. It checks the following fields in order: `invoice_id`, `invoiceId`, `invoiceid`, `order_id`, `orderId`, `sale_id`, `saleId`. The first value that resolves to a valid RepairDesk invoice is used.
 
 <Info>
   Use `invoiceId` directly whenever you have it. Ticket resolution adds a RepairDesk API call before the session can be created, which adds latency. Reserve `ticketId` for contexts — such as POS pages — where only the ticket number is readily available.

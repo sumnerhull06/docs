@@ -1,7 +1,7 @@
 ---
 title: "GET /launch — create session and open checkout in one step"
 sidebarTitle: "GET /launch"
-description: "Open the Authorize.Net hosted checkout for a RepairDesk invoice in one browser redirect. Accepts invoiceId, ticketId, amount, and customer pre-fill parameters."
+description: "Browser shortcut that opens Authorize.Net checkout in one redirect. Creates a payment session server-side from invoiceId, ticketId, recordId, or refId."
 ---
 
 The `/launch` endpoint is a browser-facing shortcut. It creates a payment session server-side and immediately renders the Authorize.Net hosted checkout launcher page in the browser — no client-side API call or JavaScript fetch is required. This is the endpoint the Chrome extension and the RepairDesk userscript open when a staff member clicks the injected **Authorize.Net Pay** button.
@@ -17,15 +17,27 @@ GET /launch
 ## Query parameters
 
 <ParamField query="invoiceId" type="string">
-  RepairDesk invoice ID to charge. Either `invoiceId` or `ticketId` must be provided. If both are supplied, the bridge tries `invoiceId` first.
+  RepairDesk invoice ID to charge. The bridge tries this value first when resolving which invoice to charge. If neither `invoiceId`, `recordId`, `refId`, nor `ticketId` resolves to a valid invoice, the browser receives an error page.
 </ParamField>
 
 <ParamField query="ticketId" type="string">
   RepairDesk ticket ID. The bridge resolves the ticket to its associated invoice server-side. Use this on POS pages where an explicit invoice ID is not available in the URL.
 </ParamField>
 
+<ParamField query="recordId" type="string">
+  Alternative invoice ID parameter. Treated the same as `invoiceId` — the bridge attempts to validate it as a direct invoice ID before falling back to `ticketId`. Useful when the page URL exposes the invoice as `recordId` instead of `invoiceId`.
+</ParamField>
+
+<ParamField query="refId" type="string">
+  Alternative invoice ID parameter. Treated the same as `invoiceId` and `recordId` — the bridge tries `invoiceId`, then `recordId`, then `refId` as direct invoice ID candidates before falling back to `ticketId`.
+</ParamField>
+
 <ParamField query="amount" type="number">
   Charge amount override in dollars. Must be greater than zero and must not exceed the current invoice due balance. Defaults to the full due balance if omitted.
+</ParamField>
+
+<ParamField query="customerId" type="string">
+  RepairDesk customer ID. When provided, the bridge fetches the full customer profile from RepairDesk and uses it to populate all billing fields. Individual `customerEmail`, `customerFirstName`, and other customer parameters take precedence over the fetched profile values.
 </ParamField>
 
 <ParamField query="customerEmail" type="string">
@@ -44,9 +56,16 @@ GET /launch
   Pre-fills the phone number field in the Authorize.Net billing section.
 </ParamField>
 
-<ParamField query="customerId" type="string">
-  RepairDesk customer ID. When provided, the bridge fetches the full customer profile from RepairDesk and uses it to populate all billing fields. Individual `customerEmail`, `customerFirstName`, and other customer parameters take precedence over the fetched profile values.
-</ParamField>
+## Invoice ID resolution order
+
+The bridge tries each of the following in order and uses the first value that resolves to a valid RepairDesk invoice:
+
+1. `invoiceId` query parameter
+2. `recordId` query parameter
+3. `refId` query parameter
+4. Invoice derived from `ticketId` (the bridge looks up the ticket and extracts the associated invoice ID)
+
+If none of the supplied parameters resolve to a valid invoice, the browser receives an HTML error page with HTTP status `400`.
 
 ## Example URLs
 
@@ -54,6 +73,7 @@ GET /launch
 GET /launch?invoiceId=12345
 GET /launch?invoiceId=12345&amount=49.99
 GET /launch?ticketId=67890&amount=52.99
+GET /launch?recordId=12345&customerEmail=customer%40example.com
 GET /launch?invoiceId=12345&customerEmail=customer%40example.com&customerFirstName=Alex
 ```
 
@@ -69,7 +89,7 @@ The rendered page also includes:
 
 ## Error behavior
 
-If the bridge cannot resolve an invoice — because neither `invoiceId` nor `ticketId` was provided, or because the ticket does not map to a known invoice — the browser receives an HTML error page with HTTP status `400`. If RepairDesk or Authorize.Net returns an error during session creation, the browser receives an HTML error page with HTTP status `502`. No JSON is returned from this endpoint under any circumstance.
+If the bridge cannot resolve an invoice — because no valid invoice ID parameter was provided, or because the ticket does not map to a known invoice — the browser receives an HTML error page with HTTP status `400`. If RepairDesk or Authorize.Net returns an error during session creation, the browser receives an HTML error page with HTTP status `502`. No JSON is returned from this endpoint under any circumstance.
 
 <Note>
   Use `/launch` for browser-based launch patterns: links, buttons, Chrome extensions, and userscripts. For server-to-server integration — for example, generating a checkout link inside your own backend — use `POST /api/payments/sessions` instead, which returns JSON including `checkoutUrl` and `statusUrl`.
