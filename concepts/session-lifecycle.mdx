@@ -1,0 +1,90 @@
+---
+title: "Payment session states and lifecycle explained"
+sidebarTitle: "Session Lifecycle"
+description: "Learn how payment sessions move through states from created to recorded, and what each status means for your RepairDesk integration."
+---
+
+Every payment attempt in the bridge is tracked as a session with a unique ID. When you call `POST /api/payments/sessions`, the bridge creates a session record in local storage and advances it through a defined set of statuses as the payment progresses — from the moment the Authorize.Net token is requested, through customer checkout, all the way to the final write-back into RepairDesk. You can inspect or poll a session at any time using its `statusUrl`.
+
+## Session statuses
+
+| Status | Meaning |
+|---|---|
+| `created` | The session has been initialized in the bridge. The Authorize.Net hosted page token has not yet been requested. This status is transient and typically advances to `pending` within the same request. |
+| `pending` | The bridge obtained an Authorize.Net hosted payment token and returned a `checkoutUrl`. The session is waiting for the customer to complete (or abandon) checkout. |
+| `approved` | Authorize.Net approved the transaction. This is an intermediate state that the bridge moves through on its way to `recorded`. Under normal conditions you will not observe a session resting in this state. |
+| `declined` | Authorize.Net returned response code `2`, indicating the card was declined. No payment was recorded in RepairDesk. This is a terminal state. |
+| `canceled` | The customer clicked **Cancel** on the hosted checkout page. The bridge sets this status when the cancel redirect is received. No payment was recorded in RepairDesk. This is a terminal state. |
+| `recorded` | The payment was captured by Authorize.Net and successfully written back to RepairDesk via `POST /invoices/{invoiceId}/payments`. This is the terminal success state. |
+| `error` | An unexpected error occurred during transaction sync — for example, Authorize.Net returned an unrecognized response code, or the RepairDesk API call failed. Inspect `lastError` on the session object for details. This is a terminal state. |
+
+## Session object
+
+A fully resolved session looks like this:
+
+```json
+{
+  "id": "sess_abc123",
+  "invoiceId": "12345",
+  "requestedAmount": 99.99,
+  "dueAmountAtCreation": 99.99,
+  "status": "recorded",
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:02:30.000Z",
+  "authorizeNetTransactionId": "12345678",
+  "authorizeNetAuthCode": "ABC123",
+  "authorizeNetResponseCode": "1",
+  "repairDeskPaymentRecordedAt": "2024-01-15T10:02:30.000Z"
+}
+```
+
+The optional fields `authorizeNetTransactionId`, `authorizeNetAuthCode`, `authorizeNetResponseCode`, and `repairDeskPaymentRecordedAt` are only populated after the Authorize.Net webhook is received and processed. The `authorizeNetToken` field (the raw hosted page token) is stored internally but is not included in session API responses.
+
+## Polling for status
+
+After you open the `checkoutUrl`, poll the `statusUrl` returned during session creation to watch for a terminal state. The `statusUrl` always follows the pattern:
+
+```
+GET /api/payments/sessions/{sessionId}
+```
+
+Here is a minimal JavaScript polling example you can adapt for your integration:
+
+```javascript
+async function waitForTerminalStatus(statusUrl) {
+  const TERMINAL = new Set(["recorded", "declined", "canceled", "error"]);
+  const INTERVAL_MS = 3000;
+
+  while (true) {
+    const response = await fetch(statusUrl);
+
+    if (!response.ok) {
+      throw new Error(`Status check failed: ${response.status}`);
+    }
+
+    const session = await response.json();
+    console.log("Session status:", session.status);
+
+    if (TERMINAL.has(session.status)) {
+      return session;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS));
+  }
+}
+
+// Usage
+const session = await waitForTerminalStatus(
+  "https://bridge.example.com/api/payments/sessions/sess_abc123"
+);
+
+if (session.status === "recorded") {
+  console.log("Payment recorded. Transaction ID:", session.authorizeNetTransactionId);
+} else {
+  console.warn("Payment did not complete. Final status:", session.status);
+}
+```
+
+<Tip>
+  Only poll until you reach a terminal state — `recorded`, `declined`, `canceled`, or `error`. Once a session is in a terminal state, its status will not change. Stop polling as soon as you receive one of these values to avoid unnecessary requests.
+</Tip>

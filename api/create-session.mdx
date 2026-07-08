@@ -1,0 +1,119 @@
+---
+title: "POST /api/payments/sessions — create a payment session"
+sidebarTitle: "POST /sessions"
+description: "Create an Authorize.Net hosted payment session for a RepairDesk invoice. Returns a checkoutUrl and statusUrl for the payment flow."
+---
+
+Call this endpoint to start a payment flow for a RepairDesk invoice. The bridge validates the invoice against RepairDesk, creates an Authorize.Net hosted payment page, and returns a checkout URL you can open for the customer. If you supply customer information, the bridge pre-fills the Authorize.Net billing form so the customer does not have to type it again.
+
+## Endpoint
+
+```http
+POST /api/payments/sessions
+Content-Type: application/json
+```
+
+## Request body
+
+<ParamField body="invoiceId" type="string" required>
+  The RepairDesk invoice ID to charge. The bridge fetches the invoice from RepairDesk to validate it exists and to resolve the outstanding balance.
+</ParamField>
+
+<ParamField body="amount" type="number">
+  The amount to charge in dollars. Must be greater than zero and must not exceed the current invoice due balance. Defaults to the full due amount if omitted.
+</ParamField>
+
+<ParamField body="customerEmail" type="string">
+  Customer email address to pre-fill on the Authorize.Net hosted checkout form. Falls back to the email on the RepairDesk invoice if omitted.
+</ParamField>
+
+<ParamField body="customerFirstName" type="string">
+  Customer first name for the Authorize.Net billing section. Falls back to the name on the RepairDesk invoice if omitted.
+</ParamField>
+
+<ParamField body="customerLastName" type="string">
+  Customer last name for the Authorize.Net billing section. Falls back to the name on the RepairDesk invoice if omitted.
+</ParamField>
+
+## Example request
+
+<CodeGroup>
+
+```bash curl
+curl -X POST https://your-bridge.example.com/api/payments/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "invoiceId": "12345",
+    "amount": 99.99,
+    "customerEmail": "customer@example.com",
+    "customerFirstName": "Alex",
+    "customerLastName": "Smith"
+  }'
+```
+
+```javascript fetch
+const response = await fetch('https://your-bridge.example.com/api/payments/sessions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    invoiceId: '12345',
+    amount: 99.99,
+    customerEmail: 'customer@example.com',
+    customerFirstName: 'Alex',
+    customerLastName: 'Smith'
+  })
+});
+const session = await response.json();
+```
+
+</CodeGroup>
+
+## Response — 201 Created
+
+<ResponseField name="sessionId" type="string">
+  Unique identifier for this payment session. Use it to poll `GET /api/payments/sessions/{sessionId}` or to open the `checkoutUrl` directly.
+</ResponseField>
+
+<ResponseField name="invoiceId" type="string">
+  The RepairDesk invoice ID that was passed in the request.
+</ResponseField>
+
+<ResponseField name="amount" type="number">
+  The amount that will be charged when the customer completes checkout. Rounded to two decimal places.
+</ResponseField>
+
+<ResponseField name="authorizeNetToken" type="string">
+  The short-lived hosted page token issued by Authorize.Net. The `checkoutUrl` and `/checkout/{sessionId}` pages use this token to launch the payment form.
+</ResponseField>
+
+<ResponseField name="checkoutUrl" type="string">
+  URL to navigate the customer to in order to complete payment. Opens the bridge's launcher page, which auto-submits the Authorize.Net hosted form.
+</ResponseField>
+
+<ResponseField name="statusUrl" type="string">
+  URL to poll in order to track whether the payment has been confirmed and recorded in RepairDesk. Points to `GET /api/payments/sessions/{sessionId}`.
+</ResponseField>
+
+## Example response
+
+```json
+{
+  "sessionId": "sess_abc123",
+  "invoiceId": "12345",
+  "amount": 99.99,
+  "authorizeNetToken": "eyJjb2RlIjoiMTIzNDU2...",
+  "checkoutUrl": "https://your-bridge.example.com/checkout/sess_abc123",
+  "statusUrl": "https://your-bridge.example.com/api/payments/sessions/sess_abc123"
+}
+```
+
+## Error responses
+
+| Status | Cause |
+|---|---|
+| `400 Bad Request` | `invoiceId` was not provided, the invoice has no outstanding balance, or the requested `amount` exceeds the invoice due balance |
+| `502 Bad Gateway` | The bridge could not reach RepairDesk or Authorize.Net — check your `.env` credentials and upstream connectivity |
+
+<Tip>
+  After creating a session, open the `checkoutUrl` in the customer's browser. Once the customer completes payment, Authorize.Net fires a webhook to the bridge, which records the payment in RepairDesk and moves the session to `recorded` status. Poll `statusUrl` to detect this transition.
+</Tip>

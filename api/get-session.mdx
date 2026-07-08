@@ -1,0 +1,149 @@
+---
+title: "GET /api/payments/sessions/{sessionId} — fetch session"
+sidebarTitle: "GET /sessions/:id"
+description: "Retrieve the current status and details of a payment session. Poll this endpoint to detect when a payment reaches the recorded state."
+---
+
+Use this endpoint to check the current state of a payment session. Poll it after redirecting the customer to checkout to detect when Authorize.Net has confirmed the payment and the bridge has written it back to RepairDesk. The response includes all transaction details the bridge received from Authorize.Net, and a timestamp for when the RepairDesk payment record was created.
+
+## Endpoint
+
+```http
+GET /api/payments/sessions/{sessionId}
+```
+
+## Path parameters
+
+<ParamField path="sessionId" type="string" required>
+  The session ID returned by `POST /api/payments/sessions` in the `sessionId` field.
+</ParamField>
+
+## Example request
+
+<CodeGroup>
+
+```bash curl
+curl https://your-bridge.example.com/api/payments/sessions/sess_abc123
+```
+
+```javascript fetch
+const response = await fetch('https://your-bridge.example.com/api/payments/sessions/sess_abc123');
+const session = await response.json();
+```
+
+</CodeGroup>
+
+## Response — 200 OK
+
+<ResponseField name="id" type="string">
+  The unique session identifier.
+</ResponseField>
+
+<ResponseField name="invoiceId" type="string">
+  The RepairDesk invoice ID associated with this session.
+</ResponseField>
+
+<ResponseField name="requestedAmount" type="number">
+  The charge amount specified when the session was created. Rounded to two decimal places.
+</ResponseField>
+
+<ResponseField name="dueAmountAtCreation" type="number">
+  The invoice's outstanding balance at the time the session was created. Stored for reference and validation.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current lifecycle status of the session. See the table below for all possible values.
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp for when the session was first created.
+</ResponseField>
+
+<ResponseField name="updatedAt" type="string">
+  ISO 8601 timestamp for the last time the session record was modified.
+</ResponseField>
+
+<ResponseField name="authorizeNetTransactionId" type="string | null">
+  The Authorize.Net transaction ID. Populated after the bridge processes an approved webhook event.
+</ResponseField>
+
+<ResponseField name="authorizeNetAuthCode" type="string | null">
+  The authorization code returned by Authorize.Net for the approved transaction.
+</ResponseField>
+
+<ResponseField name="authorizeNetResponseCode" type="string | null">
+  The numeric response code from Authorize.Net. A value of `"1"` indicates an approved transaction.
+</ResponseField>
+
+<ResponseField name="lastError" type="string | null">
+  Human-readable error message. Populated when `status` is `"error"`. Null otherwise.
+</ResponseField>
+
+<ResponseField name="repairDeskPaymentRecordedAt" type="string | null">
+  ISO 8601 timestamp for when the bridge successfully recorded the payment in RepairDesk. Null until `status` reaches `"recorded"`.
+</ResponseField>
+
+### Session status values
+
+| Status | Meaning |
+|---|---|
+| `created` | Session record created, Authorize.Net token not yet obtained |
+| `pending` | Hosted page token obtained; waiting for the customer to complete checkout |
+| `approved` | Authorize.Net transaction approved; bridge is recording the payment in RepairDesk |
+| `declined` | Authorize.Net declined the transaction |
+| `canceled` | Customer canceled on the hosted checkout page |
+| `recorded` | Payment successfully written to RepairDesk — terminal success state |
+| `error` | An unexpected error occurred; check `lastError` for details |
+
+## Example response
+
+```json
+{
+  "id": "sess_abc123",
+  "invoiceId": "12345",
+  "requestedAmount": 99.99,
+  "dueAmountAtCreation": 99.99,
+  "status": "recorded",
+  "createdAt": "2024-01-15T10:00:00.000Z",
+  "updatedAt": "2024-01-15T10:02:30.000Z",
+  "authorizeNetTransactionId": "12345678",
+  "authorizeNetAuthCode": "ABC123",
+  "authorizeNetResponseCode": "1",
+  "lastError": null,
+  "repairDeskPaymentRecordedAt": "2024-01-15T10:02:30.000Z"
+}
+```
+
+## Polling pattern
+
+Poll this endpoint at a reasonable interval (e.g. every 3 seconds) after the customer enters the checkout flow. Stop as soon as you reach a terminal status.
+
+```javascript
+async function pollSession(sessionId, bridgeBaseUrl) {
+  const statusUrl = `${bridgeBaseUrl}/api/payments/sessions/${sessionId}`;
+
+  while (true) {
+    const response = await fetch(statusUrl);
+    const session = await response.json();
+
+    console.log('Session status:', session.status);
+
+    const terminalStatuses = ['recorded', 'declined', 'canceled', 'error'];
+    if (terminalStatuses.includes(session.status)) {
+      return session;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+}
+```
+
+<Note>
+  Stop polling when `status` is `recorded`, `declined`, `canceled`, or `error`. These are terminal states — the bridge will not transition a session out of them.
+</Note>
+
+## Error responses
+
+| Status | Cause |
+|---|---|
+| `404 Not Found` | No session exists with the given `sessionId` |

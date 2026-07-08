@@ -1,0 +1,55 @@
+---
+title: "What is the RepairDesk Authorize.Net Bridge?"
+sidebarTitle: "Introduction"
+description: "Learn how the RepairDesk Authorize.Net Bridge connects your repair shop invoices to secure hosted checkout and auto-records payments."
+---
+
+RepairDesk does not natively support Authorize.Net as a payment gateway. The RepairDesk Authorize.Net Bridge is a self-hosted Node.js/Express service that fills that gap. It creates Authorize.Net Accept Hosted payment sessions tied to RepairDesk invoices, presents Authorize.Net's PCI-compliant hosted checkout page to your customer, and then automatically writes the approved payment back into RepairDesk through the invoice payment API — so your books stay accurate without any manual step.
+
+## How it works
+
+The entire payment flow completes in three steps.
+
+<Steps>
+  <Step title="Create a payment session">
+    A staff member (or the Chrome extension) calls `POST /api/payments/sessions` with the RepairDesk invoice ID, the amount due, and the customer's contact details. The bridge requests a hosted payment token from Authorize.Net and returns two URLs: a `checkoutUrl` to open for the customer and a `statusUrl` to poll for completion.
+  </Step>
+  <Step title="Customer completes Authorize.Net hosted checkout">
+    Opening the `checkoutUrl` sends the customer to Authorize.Net's own checkout page. Card data is entered and processed entirely on Authorize.Net's servers — it never passes through the bridge or your network.
+  </Step>
+  <Step title="Webhook triggers payment recording in RepairDesk">
+    Once Authorize.Net approves the transaction, it fires a webhook to `POST /webhooks/authorize-net` on your bridge. The bridge verifies the event, marks the session as paid, and calls `POST /invoices/{invoiceId}/payments` on the RepairDesk API to record the payment. Each session is recorded exactly once, preventing duplicate charges even if the webhook is delivered more than once.
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Hosted checkout" icon="shield-check">
+    Card data is entered on Authorize.Net's own servers. Your bridge never sees raw card numbers, keeping your PCI scope minimal.
+  </Card>
+  <Card title="Automatic payment sync" icon="arrows-rotate">
+    Approved payments are written back into RepairDesk automatically via the invoice payment API — no manual reconciliation needed.
+  </Card>
+  <Card title="Idempotent recording" icon="circle-check">
+    Each payment session is recorded in RepairDesk exactly once. Even if Authorize.Net delivers the same webhook multiple times, the bridge will not create duplicate payment entries.
+  </Card>
+  <Card title="Chrome extension & userscript" icon="puzzle-piece">
+    A bundled Chrome extension (MV3) and a Tampermonkey-compatible userscript inject an **Authorize.Net Pay** button directly into RepairDesk POS, so staff never have to leave the app.
+  </Card>
+  <Card title="Sandbox & production support" icon="flask">
+    Set `AUTHORIZE_NET_ENV=sandbox` during development and switch to `production` when you go live — no code changes required.
+  </Card>
+  <Card title="API key and OAuth authentication" icon="key">
+    Authenticate with RepairDesk using a plain API key or the full OAuth 2.0 flow with automatic token refresh.
+  </Card>
+</CardGroup>
+
+## What you need
+
+Before you install the bridge, make sure you have the following:
+
+- A **RepairDesk account** with a generated API key, and the numeric **payment method ID** that will represent Authorize.Net payments in your RepairDesk records.
+- An **Authorize.Net merchant account** with an API login ID, a transaction key, and (recommended) a signature key for webhook verification.
+- A **publicly reachable server** to host the bridge — Authorize.Net must be able to POST webhook events to your bridge URL. A plain VPS, cloud VM, or tunnel such as ngrok works for development.
+- **Node.js 18 or later** installed on the host machine.

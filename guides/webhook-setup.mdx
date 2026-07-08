@@ -1,0 +1,86 @@
+---
+title: "Configure Authorize.Net webhooks to sync payments"
+sidebarTitle: "Webhook Setup"
+description: "Set up Authorize.Net webhooks to automatically record captured payments back into RepairDesk after each successful transaction."
+---
+
+Webhooks are how Authorize.Net notifies your bridge that a payment was captured. Without a webhook configured, the bridge has no reliable signal to write the payment back into RepairDesk — the browser return URL alone is not treated as a source of truth. Complete the steps below to connect your Authorize.Net account to the bridge and enable automatic payment recording.
+
+## Webhook URL
+
+Configure Authorize.Net to `POST` events to this endpoint on your bridge:
+
+```
+POST https://your-bridge.example.com/webhooks/authorize-net
+```
+
+Replace `your-bridge.example.com` with the public hostname where your bridge is deployed.
+
+## Setup Steps
+
+<Steps>
+  <Step title="Log in to the Authorize.Net merchant dashboard">
+    Go to [login.authorize.net](https://login.authorize.net) and sign in with your merchant account credentials.
+  </Step>
+  <Step title="Navigate to Webhooks">
+    From the top navigation, go to **Account** → **Webhooks**.
+  </Step>
+  <Step title="Add a new endpoint">
+    Click **Add Endpoint** and enter your bridge webhook URL in the endpoint field.
+  </Step>
+  <Step title="Enable the required event types">
+    Enable all three of the following event types for the endpoint:
+
+    | Event type | When it fires |
+    |---|---|
+    | `net.authorize.payment.authcapture.created` | Auth-and-capture transaction approved |
+    | `net.authorize.payment.priorAuthCapture.created` | Prior authorization captured |
+    | `net.authorize.payment.capture.created` | Capture-only transaction approved |
+  </Step>
+  <Step title="Copy the Signature Key">
+    After saving the endpoint, Authorize.Net generates a **Signature Key** for it. Copy this key — you will need it in the next step.
+  </Step>
+  <Step title="Add the key to your bridge environment">
+    Open your bridge `.env` file and set the signature key:
+
+    ```bash .env
+    AUTHORIZE_NET_SIGNATURE_KEY=<paste-your-key-here>
+    ```
+  </Step>
+  <Step title="Restart the bridge">
+    Restart the bridge process so it picks up the new environment variable:
+
+    ```bash
+    npm start
+    ```
+
+    If you are running in development mode, stop and restart `npm run dev`.
+  </Step>
+</Steps>
+
+## Verify Webhook Delivery
+
+After your first test payment, verify that the webhook is reaching the bridge correctly:
+
+1. In the Authorize.Net dashboard, go to **Account** → **Webhooks** and open the endpoint you created. The delivery log shows each request and its HTTP response code. A successful delivery shows `200`.
+2. Poll the bridge session status endpoint to confirm the session moved to `recorded`:
+
+```
+GET https://your-bridge.example.com/api/payments/sessions/{sessionId}
+```
+
+When the status field in the response reads `"recorded"`, the payment has been written to RepairDesk.
+
+<Warning>
+  The bridge webhook endpoint must be publicly reachable on the internet. Authorize.Net cannot deliver events to `localhost` or private network addresses. During local development, use a tunneling tool such as [ngrok](https://ngrok.com) to expose your local bridge temporarily, then point the Authorize.Net webhook endpoint at the tunnel URL.
+</Warning>
+
+<Tip>
+  Always set `AUTHORIZE_NET_SIGNATURE_KEY` in your environment before going to production. Without it, anyone who discovers your webhook URL can send forged payment events that trick the bridge into recording fraudulent payments in RepairDesk.
+</Tip>
+
+## Signature Verification
+
+The bridge validates every incoming webhook request before acting on it. It reads the `x-anet-signature` header that Authorize.Net attaches to each delivery and verifies it using HMAC-SHA512 against the raw request body and your `AUTHORIZE_NET_SIGNATURE_KEY`.
+
+Any request that arrives without the header, or whose signature does not match, receives a `401 Unauthorized` response and is not processed. This ensures that only genuine Authorize.Net events trigger payment recording.

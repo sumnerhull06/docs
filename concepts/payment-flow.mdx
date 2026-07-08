@@ -1,0 +1,80 @@
+---
+title: "How the RepairDesk payment flow works end to end"
+sidebarTitle: "Payment Flow"
+description: "Understand the complete payment lifecycle from creating a session to writing the payment back into RepairDesk via Authorize.Net webhooks."
+---
+
+The bridge acts as a secure middleware layer between RepairDesk and Authorize.Net. When a payment is initiated, the bridge creates an Authorize.Net hosted payment page tied to a specific RepairDesk invoice — so card data is entered directly on Authorize.Net's infrastructure and never passes through your server. Once the customer completes checkout, Authorize.Net fires a webhook that the bridge uses to verify the transaction and automatically record the payment inside RepairDesk.
+
+## Step-by-step flow
+
+<Steps>
+  <Step title="Create a payment session">
+    You (or the Chrome extension) send a `POST` request to `/api/payments/sessions` with the invoice ID and the amount to charge. You can also use the shortcut `GET /launch?invoiceId=12345` to let the bridge create the session server-side and open the checkout page immediately.
+
+    ```json
+    {
+      "invoiceId": "12345",
+      "amount": 99.99,
+      "customerEmail": "customer@example.com",
+      "customerFirstName": "Alex",
+      "customerLastName": "Smith"
+    }
+    ```
+  </Step>
+
+  <Step title="Bridge verifies the invoice balance">
+    The bridge calls RepairDesk's `GET /invoices/{invoiceId}` and `GET /invoices/{invoiceId}/dueamount` endpoints in parallel. It confirms the invoice exists and that the requested amount does not exceed the current outstanding balance. If no amount is provided, the full due amount is used.
+  </Step>
+
+  <Step title="Bridge requests an Authorize.Net hosted payment token">
+    The bridge calls the Authorize.Net API to create a hosted payment page, passing session metadata (session ID, invoice ID, amount, and any pre-filled customer billing details) as part of the request. Authorize.Net returns a short-lived token scoped to that checkout session.
+  </Step>
+
+  <Step title="A checkoutUrl is returned — open it to present the payment form">
+    The API response includes a `checkoutUrl` and a `statusUrl`. Open `checkoutUrl` in the customer's browser. The bridge's checkout page posts the Authorize.Net token to their secure payment form, embedding it as a hosted iframe or redirect — your server is no longer in the request path.
+
+    ```json
+    {
+      "sessionId": "sess_abc123",
+      "invoiceId": "12345",
+      "amount": 99.99,
+      "checkoutUrl": "https://bridge.example.com/checkout/sess_abc123",
+      "statusUrl": "https://bridge.example.com/api/payments/sessions/sess_abc123"
+    }
+    ```
+  </Step>
+
+  <Step title="Customer enters card details on Authorize.Net's secure page">
+    Card number, expiry, and CVV are submitted directly to Authorize.Net. Your bridge server never sees, logs, or stores any sensitive card data. Authorize.Net handles PCI-DSS compliance for this step entirely.
+  </Step>
+
+  <Step title="Authorize.Net captures the payment and fires a webhook">
+    After a successful auth-and-capture, Authorize.Net sends an HTTP `POST` to your configured webhook endpoint at `/webhooks/authorize-net`. The event payload includes the transaction ID and event type (e.g. `net.authorize.payment.authcapture`).
+  </Step>
+
+  <Step title="Bridge verifies the webhook and records the payment in RepairDesk">
+    The bridge verifies the `x-anet-signature` header using HMAC-SHA512. It then calls the Authorize.Net transaction details API to fetch the response code, auth code, and confirmed amount. If the transaction is approved (response code `1`), the bridge calls `POST /invoices/{invoiceId}/payments` in RepairDesk to record the payment, and marks the session status as `recorded`.
+  </Step>
+</Steps>
+
+## Idempotency
+
+<Note>
+  The bridge checks whether a payment has already been recorded before writing it to RepairDesk. If `repairDeskPaymentRecordedAt` is already set on the session, the bridge returns the existing session immediately without making a second payment record request. This means duplicate webhook deliveries, network retries, or replayed events never cause double-charges on the same session.
+</Note>
+
+The idempotency check happens at two levels: the bridge first looks up the session by Authorize.Net transaction ID, and then checks the `repairDeskPaymentRecordedAt` timestamp before calling the RepairDesk payments API.
+
+## Data flow
+
+Understanding exactly what data moves between systems helps clarify the security boundary:
+
+- **Invoice data** originates in RepairDesk and is fetched by the bridge at session creation time to confirm the due balance and pre-fill billing fields.
+- **Card data** is entered by the customer directly on Authorize.Net's hosted page. It travels only between the customer's browser and Authorize.Net's servers — your bridge server is never in that path.
+- **Transaction result** (transaction ID, auth code, response code, and confirmed amount) is returned to the bridge via the Authorize.Net webhook and the transaction details API. The bridge stores only these non-sensitive identifiers.
+- **Payment record** is written back to RepairDesk by the bridge using the transaction ID as a reference number, closing the loop on the invoice.
+
+<Warning>
+  The browser return URL (`/payments/return`) is not the source of truth for payment confirmation. Customers can close their browser, navigate away, or experience network issues before the return redirect fires. Always rely on the Authorize.Net webhook to `/webhooks/authorize-net` to confirm that a payment was captured and recorded in RepairDesk.
+</Warning>

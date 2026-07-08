@@ -1,0 +1,73 @@
+---
+title: "Install the Authorize.Net Pay button in RepairDesk POS"
+sidebarTitle: "Chrome Extension"
+description: "Add a native Authorize.Net Pay button to RepairDesk POS checkout using the packaged Chrome extension — no code required."
+---
+
+The Chrome extension injects an **Authorize.Net Pay** button directly into the RepairDesk POS checkout screen. Clicking the button automatically detects the open invoice, opens the bridge checkout page, and lets the customer complete payment through Authorize.Net's hosted form — card data never touches your bridge server. Once payment is captured, the bridge records it back in RepairDesk without any extra steps from staff.
+
+<Note>
+  The bridge must be running and reachable before you use the button. For production use, deploy the bridge to a publicly accessible URL. For local testing, `http://localhost:3000` works as long as the browser running RepairDesk can reach that address.
+</Note>
+
+## Install
+
+<Steps>
+  <Step title="Download or locate the extension files">
+    Grab the prebuilt zip from the repository at `browser/repairdesk-authorizenet-extension.zip`, or use the unpacked source folder at `browser/chrome-extension` if you cloned the repo.
+  </Step>
+  <Step title="Open Chrome Extensions and enable Developer mode">
+    Navigate to `chrome://extensions` in your browser. Toggle **Developer mode** on using the switch in the top-right corner of the page.
+  </Step>
+  <Step title="Load the extension">
+    <Tabs>
+      <Tab title="From zip">
+        Drag and drop `repairdesk-authorizenet-extension.zip` directly onto the `chrome://extensions` page. Chrome will unpack and install it automatically.
+      </Tab>
+      <Tab title="Unpacked (from source)">
+        Click **Load unpacked** and select the `browser/chrome-extension` folder from your local copy of the repository.
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Open Extension Options">
+    Find the **RepairDesk Authorize.Net Launcher** card on the extensions page, click **Details**, then scroll down and click **Extension options**.
+  </Step>
+  <Step title="Set your Bridge Base URL">
+    In the Options page, enter the full URL where your bridge is running in the **Bridge Base URL** field. The default value is `http://localhost:3000`. Change this to your production URL when deploying to staff machines.
+  </Step>
+  <Step title="Save and reload RepairDesk">
+    Click **Save**. The options page will confirm the setting is saved. Reload any open RepairDesk tab to activate the button.
+  </Step>
+</Steps>
+
+## Using the Button
+
+Once the extension is installed and configured, collecting a payment takes only a few clicks:
+
+1. Open RepairDesk POS and navigate to the customer's ticket.
+2. Click **Checkout** to open the payment dialog.
+3. Click **Authorize.Net Pay** — the button appears inside the payment dialog, or inline next to Checkout when possible.
+4. The bridge opens in a new tab with the correct invoice pre-filled and the amount already set.
+5. The customer completes payment on the Authorize.Net hosted checkout page.
+6. The bridge receives confirmation from Authorize.Net and automatically records the payment in RepairDesk — no manual entry required.
+
+## How Invoice Detection Works
+
+The extension resolves the invoice ID automatically so staff never need to type or copy it. It works through a strict priority order and stops as soon as it finds a valid match:
+
+1. **URL query parameters** — checks `invoiceId`, `invoice_id`, and `id` in the current page URL.
+2. **URL path patterns** — matches paths like `/invoice/12345`.
+3. **DOM markers** — scans for `data-invoice-id` attributes, invoice-specific links, and labeled elements on the page.
+4. **Visible Invoice History dialog** — reads any already-open Invoice History table without opening new dialogs.
+5. **Silent background fetch** — quietly fetches the POS invoice list endpoint and parses rows to find a matching invoice.
+6. **Ticket-based server resolution** — if a trusted ticket ID is present but no invoice ID can be found locally, the bridge resolves the invoice server-side.
+
+If none of these steps succeed, the button shows an inline **Invoice not detected** state and resets automatically — no popup or manual prompt appears.
+
+<Tip>
+  If the **Authorize.Net Pay** button does not appear after installation, reload the RepairDesk tab once. The extension content script runs at `document_idle` and the reload ensures it attaches to the current page.
+</Tip>
+
+<Warning>
+  This extension is a staff-side workaround. It injects a button into the RepairDesk UI but does not modify RepairDesk's own payment system or gateway configuration. It is intentionally designed this way because the public RepairDesk API does not expose a native payment gateway extension point.
+</Warning>

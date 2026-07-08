@@ -1,0 +1,224 @@
+---
+title: "Troubleshoot common RepairDesk bridge issues"
+sidebarTitle: "Common Issues"
+description: "Diagnose and fix the most frequent problems with the RepairDesk Authorize.Net Bridge, from auth errors to webhook failures."
+---
+
+If you run into a problem with the bridge, this guide covers the most common issues and how to resolve them. The sections below are organized by area — authentication, payment sessions, checkout and webhook delivery, and the Chrome extension — so you can jump straight to the symptoms you're seeing.
+
+## Authentication errors
+
+<Accordion title="401 Invalid webhook signature">
+  The bridge rejected an incoming Authorize.Net webhook because the `x-anet-signature` header did not match the expected value.
+
+  **Cause:** `AUTHORIZE_NET_SIGNATURE_KEY` is wrong, missing from your `.env`, or out of sync with your Authorize.Net account.
+
+  **Fix:**
+
+  <Steps>
+    <Step title="Open your Authorize.Net dashboard">
+      Navigate to **Account → Settings → Security Settings → General Security Settings → API Credentials & Keys**.
+    </Step>
+    <Step title="Copy your Signature Key">
+      Locate the **Signature Key** field and copy the value exactly, including any uppercase letters.
+    </Step>
+    <Step title="Update your .env file">
+      Set `AUTHORIZE_NET_SIGNATURE_KEY` to the copied value and restart the bridge.
+
+      ```bash
+      AUTHORIZE_NET_SIGNATURE_KEY=your_signature_key_here
+      ```
+    </Step>
+  </Steps>
+
+  <Warning>
+    If `AUTHORIZE_NET_SIGNATURE_KEY` is not set at all, the bridge accepts every webhook without verification. This is acceptable during local development but is **not recommended for production**.
+  </Warning>
+</Accordion>
+
+<Accordion title="RepairDesk 401 / 403 errors">
+  The bridge received an HTTP 401 or 403 response when calling the RepairDesk API.
+
+  **Possible causes:**
+
+  - `REPAIRDESK_API_KEY` is incorrect, has been rotated, or does not have API access enabled on the RepairDesk account.
+  - If you are using OAuth, your `REPAIRDESK_OAUTH_ACCESS_TOKEN` has expired and the refresh token could not be exchanged for a new one.
+
+  **Fix:**
+
+  - Verify `REPAIRDESK_API_KEY` in your RepairDesk account under **Settings → API**.
+  - If using OAuth, check that `REPAIRDESK_OAUTH_CLIENT_ID`, `REPAIRDESK_OAUTH_CLIENT_SECRET`, and `REPAIRDESK_OAUTH_REFRESH_TOKEN` are all set and still valid. Obtain a fresh access token if needed.
+
+  <Tip>
+    RepairDesk OAuth access tokens expire after the number of seconds configured in `REPAIRDESK_OAUTH_EXPIRES_IN` (default: 3600 seconds). If you see periodic 401 errors, confirm the refresh flow is working correctly.
+  </Tip>
+</Accordion>
+
+<Accordion title='RepairDesk request failed (401): "..."'>
+  The bridge is sending the API key in the wrong request header.
+
+  **Cause:** RepairDesk expects the API key in the `x-api-key` header by default. If your account uses a different header name, the default won't work.
+
+  **Fix:** Check your `REPAIRDESK_API_KEY_HEADER_NAME` environment variable. The default value is `x-api-key`. If your RepairDesk account requires a different header — for example, `Authorization` — update the variable accordingly and restart the bridge.
+
+  ```bash
+  REPAIRDESK_API_KEY_HEADER_NAME=x-api-key
+  ```
+</Accordion>
+
+## Payment session issues
+
+<Accordion title="Session stuck in pending">
+  The session was created and a hosted payment token was obtained, but the status never moved beyond `pending`.
+
+  **Cause:** The Authorize.Net webhook was never delivered to the bridge, so no payment was confirmed.
+
+  **Check the following:**
+
+  1. **Is the bridge publicly reachable?** Authorize.Net must be able to POST to your webhook URL over the public internet. A `localhost` URL will never receive webhooks from Authorize.Net.
+  2. **Is the webhook endpoint registered correctly?** In your Authorize.Net dashboard under **Account → Settings → Webhooks**, confirm the endpoint is set to `https://your-bridge-domain/webhooks/authorize-net`.
+  3. **Does the signature key match?** A mismatched `AUTHORIZE_NET_SIGNATURE_KEY` causes the bridge to reject the webhook with a 401, which Authorize.Net may log as a delivery failure.
+  4. **Check the Authorize.Net delivery log.** In the Authorize.Net dashboard, open **Webhooks** and inspect the delivery history for your endpoint to see the HTTP response the bridge returned.
+
+  <Note>
+    For local development, use a tunnel tool such as [ngrok](https://ngrok.com) or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) to expose your bridge and then update the webhook endpoint in Authorize.Net to point to the tunnel URL.
+  </Note>
+</Accordion>
+
+<Accordion title="Invoice does not have an outstanding balance">
+  You receive the error `Invoice does not have an outstanding balance` when creating a session.
+
+  **Cause:** The bridge called `GET /invoices/{invoiceId}/dueamount` and RepairDesk returned a value of `0` or less.
+
+  **Fix:**
+
+  - Confirm you are using the correct invoice ID.
+  - Open the invoice in RepairDesk and verify it has an unpaid balance. If the invoice is already marked as paid, the bridge cannot create a session for it.
+</Accordion>
+
+<Accordion title="Requested amount exceeds current invoice balance">
+  You receive an error similar to `Requested amount exceeds current invoice balance of 45.00` when creating a session.
+
+  **Cause:** The `amount` value you passed to `POST /api/payments/sessions` or the `/launch` URL is greater than the due amount RepairDesk currently reports for that invoice.
+
+  **Fix:** Pass a lower `amount`, or omit the `amount` field entirely — the bridge will then charge the full outstanding balance automatically.
+
+  ```json
+  {
+    "invoiceId": "12345"
+  }
+  ```
+</Accordion>
+
+<Accordion title="Payment session not found (404)">
+  `GET /api/payments/sessions/{sessionId}` returns a 404, or the checkout page shows "Payment session not found."
+
+  **Cause:** The session ID is invalid, or the bridge was restarted without access to its persistent session store.
+
+  **Fix:** Make sure `STORE_DIR` points to a directory that survives bridge restarts. If you are running inside a container, mount a persistent volume at the `STORE_DIR` path.
+
+  ```bash
+  STORE_DIR=/data/bridge-sessions
+  ```
+
+  <Warning>
+    If `STORE_DIR` is left as a temporary directory (or defaults to an in-memory store) and the bridge process restarts, all in-flight sessions are lost and must be re-created.
+  </Warning>
+</Accordion>
+
+## Checkout and webhook delivery
+
+<Accordion title="Webhooks not received (session stays pending)">
+  You completed payment on the Authorize.Net hosted page but the session never advances past `pending`.
+
+  **Cause:** Authorize.Net cannot POST webhooks to a `localhost` or private-network URL.
+
+  **Fix:** During local development, expose the bridge using a tunnel:
+
+  <Steps>
+    <Step title="Start a tunnel">
+      ```bash
+      ngrok http 3000
+      ```
+      Copy the HTTPS forwarding URL (for example, `https://abc123.ngrok.io`).
+    </Step>
+    <Step title="Register the tunnel URL in Authorize.Net">
+      In your Authorize.Net dashboard, update the webhook endpoint to:
+      ```
+      https://abc123.ngrok.io/webhooks/authorize-net
+      ```
+    </Step>
+    <Step title="Update APP_BASE_URL">
+      Set `APP_BASE_URL` in your `.env` to the same tunnel URL so that return and cancel URLs in the hosted payment page are also correct.
+    </Step>
+  </Steps>
+</Accordion>
+
+<Accordion title="Payment recorded in Authorize.Net but not in RepairDesk">
+  The Authorize.Net transaction completed successfully but the payment does not appear in RepairDesk.
+
+  **Diagnosis:** Check the session status:
+
+  ```bash
+  curl https://your-bridge-domain/api/payments/sessions/{sessionId}
+  ```
+
+  If `status` is `error`, read the `lastError` field for the specific failure message.
+
+  **Common causes:**
+
+  - **Wrong `REPAIRDESK_PAYMENT_METHOD_ID`:** The bridge passes this ID when recording a payment via `POST /invoices/{invoiceId}/payments`. If the ID does not match a valid payment method in RepairDesk, the request fails. Verify the correct ID in your RepairDesk account under **Settings → Payment Methods**.
+  - **RepairDesk auth failure at recording time:** The bridge successfully created the session but by the time the webhook arrived, the API key or OAuth token had changed. Confirm your RepairDesk credentials are still valid.
+</Accordion>
+
+<Accordion title="Authorize.Net did not return a hosted payment token">
+  Session creation fails with an error indicating no hosted payment token was returned.
+
+  **Cause:** Your Authorize.Net API credentials are invalid, or your account is not enabled for Accept Hosted.
+
+  **Fix:**
+
+  - Verify `AUTHORIZE_NET_API_LOGIN_ID` and `AUTHORIZE_NET_TRANSACTION_KEY` match the values shown in your Authorize.Net dashboard under **Account → API Credentials & Keys**.
+  - Confirm `AUTHORIZE_NET_ENV` is set to `sandbox` when testing or `production` for live transactions — using the wrong environment causes authentication failures.
+  - Ensure your Authorize.Net account has **Accept Hosted** enabled. Contact Authorize.Net support if the option is not visible in your dashboard.
+</Accordion>
+
+## Browser extension
+
+<Accordion title="Authorize.Net Pay button does not appear">
+  After installing the Chrome extension, the **Authorize.Net Pay** button is not visible on the RepairDesk checkout page.
+
+  **Fix:**
+
+  1. Reload the RepairDesk tab after installing the extension — the content script does not inject into already-open tabs.
+  2. Open `chrome://extensions` and confirm the RepairDesk Authorize.Net Bridge extension is **enabled** (toggle is on).
+  3. Make sure you are on a RepairDesk POS page with a Checkout dialog open — the button only appears in the payment section of the checkout flow.
+</Accordion>
+
+<Accordion title="Wrong invoice ID detected">
+  The extension opens the bridge `/launch` URL with an incorrect or missing invoice ID.
+
+  **Cause:** The extension reads the invoice ID from the page URL and DOM content. On POS pages, the invoice ID may not be present in the URL until you navigate to a specific invoice view.
+
+  **Fix:** Open the ticket's invoice page directly in RepairDesk POS before clicking **Authorize.Net Pay**. From the POS checkout, use **View Invoices** to navigate to the specific invoice row, then click the button again so the extension can detect the correct ID.
+</Accordion>
+
+<Accordion title="Bridge URL not configured in extension">
+  Clicking **Authorize.Net Pay** opens the wrong URL or a connection error appears.
+
+  **Cause:** The extension's Bridge Base URL is still set to the default `http://localhost:3000` when your bridge runs on a different host or port.
+
+  **Fix:**
+
+  <Steps>
+    <Step title="Open extension options">
+      In Chrome, go to `chrome://extensions`, find the **RepairDesk Authorize.Net Bridge** extension, and click **Details → Extension options**.
+    </Step>
+    <Step title="Update the Bridge Base URL">
+      Set **Bridge Base URL** to the full base URL of your bridge server — for example, `https://bridge.yourshop.example.com`.
+    </Step>
+    <Step title="Save and reload">
+      Save the options, then reload the RepairDesk tab.
+    </Step>
+  </Steps>
+</Accordion>

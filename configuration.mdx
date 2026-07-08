@@ -1,0 +1,84 @@
+---
+title: "Configure the RepairDesk Authorize.Net Bridge"
+sidebarTitle: "Configuration"
+description: "All environment variables and configuration options for the RepairDesk Authorize.Net Bridge, including OAuth and Authorize.Net settings."
+---
+
+All configuration for the bridge is done through environment variables, which you store in a `.env` file at the root of the project. Copy `.env.example` to `.env` and fill in the values before starting the server. The bridge reads the file automatically on startup via `dotenv` — you do not need to export variables in your shell.
+
+<Tip>
+  Keep `AUTHORIZE_NET_ENV=sandbox` during development and testing. Sandbox transactions are processed by Authorize.Net's test environment and will never charge a real card.
+</Tip>
+
+## Required variables
+
+These variables must be present every time the bridge starts. The server will throw a startup error if any required variable is missing or empty.
+
+| Variable | Description |
+|---|---|
+| `APP_BASE_URL` | The public URL where this bridge is reachable, e.g. `https://bridge.yourshop.com`. Used to construct redirect and callback URLs. |
+| `REPAIRDESK_BASE_URL` | RepairDesk Public API v1 base URL. Use `https://api.repairdesk.co/api/web/v1`. |
+| `REPAIRDESK_API_KEY` | Your RepairDesk API key. **Required only when OAuth variables are not set.** If you configure OAuth credentials, this variable becomes optional. |
+| `REPAIRDESK_PAYMENT_METHOD_ID` | The numeric ID of the RepairDesk payment method that represents Authorize.Net. You can find this in your RepairDesk settings under payment methods. |
+| `AUTHORIZE_NET_ENV` | The Authorize.Net environment to use. Must be `sandbox` or `production`. Defaults to `sandbox` if omitted. |
+| `AUTHORIZE_NET_API_LOGIN_ID` | Your Authorize.Net API login ID, found in the Authorize.Net merchant interface under Account → Settings → API Credentials. |
+| `AUTHORIZE_NET_TRANSACTION_KEY` | Your Authorize.Net transaction key, generated alongside the API login ID. |
+
+## RepairDesk OAuth variables
+
+If your RepairDesk account uses OAuth 2.0 instead of a plain API key, set these variables. When any OAuth credential is present, `REPAIRDESK_API_KEY` becomes optional and the bridge uses bearer token authentication with automatic token refresh.
+
+| Variable | Default | Description |
+|---|---|---|
+| `REPAIRDESK_OAUTH_CLIENT_ID` | — | OAuth application client ID. |
+| `REPAIRDESK_OAUTH_CLIENT_SECRET` | — | OAuth application client secret. |
+| `REPAIRDESK_OAUTH_ACCESS_TOKEN` | — | The current OAuth access token. The bridge uses this for immediate requests. |
+| `REPAIRDESK_OAUTH_REFRESH_TOKEN` | — | The refresh token used to obtain a new access token when the current one expires. |
+| `REPAIRDESK_OAUTH_TOKEN_PATH` | `/oauth2/token` | The path on `REPAIRDESK_BASE_URL` used for token refresh requests. |
+| `REPAIRDESK_OAUTH_EXPIRES_IN` | `3600` | Lifetime of the access token in seconds. The bridge uses this to schedule proactive token refresh. |
+
+<Info>
+  The bridge treats OAuth as active when `REPAIRDESK_OAUTH_ACCESS_TOKEN` is set, **or** when all three of `REPAIRDESK_OAUTH_CLIENT_ID`, `REPAIRDESK_OAUTH_CLIENT_SECRET`, and `REPAIRDESK_OAUTH_REFRESH_TOKEN` are set together.
+</Info>
+
+## Recommended variables
+
+| Variable | Description |
+|---|---|
+| `AUTHORIZE_NET_SIGNATURE_KEY` | Your Authorize.Net webhook signature key. The bridge uses this to verify that incoming webhook payloads were genuinely sent by Authorize.Net. |
+
+<Warning>
+  Always set `AUTHORIZE_NET_SIGNATURE_KEY` in production. Without it, the bridge cannot verify the authenticity of incoming webhook events, making your payment recording endpoint open to spoofed requests.
+</Warning>
+
+## Optional variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | The local TCP port the Express server listens on. Must be a positive integer. |
+| `STORE_DIR` | `./data` | Directory where the bridge persists local payment session state. Used for idempotency — do not delete this directory while sessions are in flight. |
+| `REPAIRDESK_API_KEY_HEADER_NAME` | `x-api-key` | The HTTP header name used to send the RepairDesk API key. Change this only if RepairDesk updates their API authentication scheme. |
+
+## Complete `.env.example`
+
+The following is the full `.env.example` shipped with the repository. Copy it to `.env` and replace every `replace-me` placeholder with a real value.
+
+```ini title=".env.example"
+PORT=3000
+APP_BASE_URL=http://localhost:3000
+REPAIRDESK_BASE_URL=https://api.repairdesk.co/api/web/v1
+REPAIRDESK_API_KEY=replace-me
+REPAIRDESK_API_KEY_HEADER_NAME=x-api-key
+REPAIRDESK_OAUTH_CLIENT_ID=replace-me
+REPAIRDESK_OAUTH_CLIENT_SECRET=replace-me
+REPAIRDESK_OAUTH_ACCESS_TOKEN=replace-me
+REPAIRDESK_OAUTH_REFRESH_TOKEN=replace-me
+REPAIRDESK_OAUTH_TOKEN_PATH=/oauth2/token
+REPAIRDESK_OAUTH_EXPIRES_IN=3600
+REPAIRDESK_PAYMENT_METHOD_ID=replace-with-repairdesk-payment-method-id
+AUTHORIZE_NET_ENV=sandbox
+AUTHORIZE_NET_API_LOGIN_ID=replace-me
+AUTHORIZE_NET_TRANSACTION_KEY=replace-me
+AUTHORIZE_NET_SIGNATURE_KEY=replace-me
+STORE_DIR=./data
+```

@@ -1,0 +1,89 @@
+---
+title: "RepairDesk Bridge REST API reference overview"
+sidebarTitle: "Overview"
+description: "Complete reference for all REST endpoints exposed by the RepairDesk Authorize.Net Bridge, with authentication, base URLs, and common patterns."
+---
+
+The RepairDesk Authorize.Net Bridge exposes a small REST API for creating payment sessions, checking session status, and receiving Authorize.Net webhook events. All endpoints accept and return JSON unless otherwise noted — the `/launch` endpoint and a handful of browser-facing routes return HTML pages instead.
+
+## Base URL
+
+```
+https://your-bridge.example.com
+```
+
+Set `APP_BASE_URL` in your `.env` file to the public URL where your bridge is reachable. The bridge embeds this value into `checkoutUrl` and `statusUrl` fields in API responses, and into the return and cancel URLs it registers with Authorize.Net when creating a hosted payment page.
+
+## Authentication
+
+The bridge API does not require authentication of its own — it is designed as a server-to-server or staff-side service. Protect the bridge behind a firewall or reverse proxy if you do not want it publicly accessible.
+
+The one exception is the `/webhooks/authorize-net` endpoint: it validates the Authorize.Net `x-anet-signature` HMAC-SHA512 header automatically on every incoming request. See the [webhook reference](/api/webhooks) for details.
+
+<Note>
+  Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to enable webhook signature verification. Requests without a valid signature will receive a `401 Unauthorized` response.
+</Note>
+
+## Content type
+
+All `POST` requests must include the `Content-Type: application/json` header. The webhook endpoint is an exception — Authorize.Net sends `application/json` automatically, and the bridge reads the raw body for signature verification before parsing.
+
+## Endpoints
+
+<CardGroup cols={2}>
+  <Card
+    title="POST /api/payments/sessions"
+    icon="plus"
+    href="/api/create-session"
+  >
+    Create an Authorize.Net hosted payment session for a RepairDesk invoice. Returns a `checkoutUrl` and `statusUrl`.
+  </Card>
+  <Card
+    title="GET /api/payments/sessions/{sessionId}"
+    icon="magnifying-glass"
+    href="/api/get-session"
+  >
+    Retrieve the current status and full details of a payment session. Poll this endpoint to detect payment completion.
+  </Card>
+  <Card
+    title="GET /launch"
+    icon="arrow-up-right-from-square"
+    href="/api/launch"
+  >
+    Browser-facing shortcut that creates a session and immediately renders the hosted checkout page — no client-side API call required.
+  </Card>
+  <Card
+    title="POST /webhooks/authorize-net"
+    icon="webhook"
+    href="/api/webhooks"
+  >
+    Authorize.Net notifies this endpoint when a transaction is captured. The bridge verifies the signature, then records the payment in RepairDesk.
+  </Card>
+</CardGroup>
+
+## Health check
+
+```
+GET /health
+```
+
+Returns `{"ok": true}` when the bridge is running. No authentication is required. Use this endpoint to verify your deployment is reachable before creating payment sessions.
+
+```json
+{ "ok": true }
+```
+
+## Error responses
+
+All errors return a JSON object with a single `error` string field describing what went wrong.
+
+```json
+{ "error": "invoiceId is required" }
+```
+
+| Status code | Meaning |
+|---|---|
+| `400 Bad Request` | Missing or invalid request parameters (e.g. `invoiceId` not provided, amount exceeds invoice balance) |
+| `404 Not Found` | The requested resource does not exist (e.g. unknown `sessionId`) |
+| `401 Unauthorized` | Webhook signature verification failed |
+| `502 Bad Gateway` | An upstream API call to RepairDesk or Authorize.Net failed |

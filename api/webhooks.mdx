@@ -1,0 +1,104 @@
+---
+title: "POST /webhooks/authorize-net — receive payment events"
+sidebarTitle: "POST /webhooks"
+description: "Authorize.Net webhook endpoint. Configure this URL in your Authorize.Net dashboard to automatically sync captured payments to RepairDesk."
+---
+
+The bridge exposes this endpoint to receive payment event notifications from Authorize.Net. When Authorize.Net fires a webhook for a captured transaction, the bridge verifies the HMAC-SHA512 signature, fetches the full transaction details from the Authorize.Net API, and records the payment in RepairDesk against the matching invoice. The bridge uses the Authorize.Net transaction ID embedded in the webhook payload to look up the associated payment session — ensuring each payment is recorded exactly once.
+
+## Endpoint
+
+```http
+POST /webhooks/authorize-net
+Content-Type: application/json
+```
+
+## Configure in Authorize.Net
+
+This endpoint must be registered in your Authorize.Net merchant account before any events will be delivered. To register it:
+
+1. Log in to the [Authorize.Net merchant interface](https://account.authorize.net).
+2. Navigate to **Account → Webhooks**.
+3. Click **Add Endpoint** and enter your bridge's full webhook URL:
+   ```
+   https://your-bridge.example.com/webhooks/authorize-net
+   ```
+4. Select the event types listed in the [Handled event types](#handled-event-types) section below.
+5. Save the endpoint. Authorize.Net will begin delivering signed events immediately.
+
+## Handled event types
+
+The bridge acts on the following three event types. Any other event type is acknowledged with a `202` response and ignored — no payment recording is attempted.
+
+| Event type | Description |
+|---|---|
+| `net.authorize.payment.authcapture.created` | Auth-and-capture transaction completed |
+| `net.authorize.payment.priorAuthCapture.created` | Previously authorized transaction captured |
+| `net.authorize.payment.capture.created` | Explicit capture of an authorized transaction |
+
+All other event types receive a `202 Accepted` response with `{ "received": true, "ignored": true }`.
+
+## Signature verification
+
+The bridge validates the `x-anet-signature` header on every incoming request using HMAC-SHA512. Authorize.Net sends this header automatically when you have a signature key configured on your webhook endpoint.
+
+Set `AUTHORIZE_NET_SIGNATURE_KEY` in your `.env` file to the value shown in your Authorize.Net webhook settings. The bridge computes its own HMAC over the raw request body and compares it to the header value. Requests with a missing or invalid signature receive a `401 Unauthorized` response and are not processed.
+
+<Warning>
+  Do not expose this endpoint publicly without signature verification enabled. Without it, any client that can reach your bridge can forge a payment event and cause the bridge to record a fraudulent payment in RepairDesk. Set `AUTHORIZE_NET_SIGNATURE_KEY` in `.env` before enabling the webhook in Authorize.Net.
+</Warning>
+
+## Request body
+
+Authorize.Net sends a JSON payload with the following shape. You do not construct this body yourself — it is sent automatically by Authorize.Net when a transaction event fires.
+
+```json webhook-event.json
+{
+  "notificationId": "abc123",
+  "eventType": "net.authorize.payment.authcapture.created",
+  "eventDate": "2024-01-15T10:02:00.000Z",
+  "webhookId": "wh_12345",
+  "payload": {
+    "responseCode": 1,
+    "authCode": "ABC123",
+    "avsResponse": "Y",
+    "authAmount": 99.99,
+    "entityName": "transaction",
+    "id": "12345678"
+  }
+}
+```
+
+The `payload.id` field is the Authorize.Net transaction ID. The bridge uses this value to call the Authorize.Net transaction details API, match the transaction to a payment session by `invoiceId`, and then record the payment in RepairDesk.
+
+## Response — 200 OK
+
+When the bridge successfully processes the event and records the payment in RepairDesk, it responds with:
+
+```json
+{
+  "received": true,
+  "sessionId": "sess_abc123",
+  "status": "recorded"
+}
+```
+
+<ResponseField name="received" type="boolean">
+  Always `true` for a processed event.
+</ResponseField>
+
+<ResponseField name="sessionId" type="string">
+  The bridge session ID that was matched and updated by this webhook event.
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  The final session status after processing. For a successful payment sync this will be `"recorded"`.
+</ResponseField>
+
+## Error responses
+
+| Status | Cause |
+|---|---|
+| `401 Unauthorized` | The `x-anet-signature` header is missing or does not match the expected HMAC value |
+| `202 Accepted` | Event received but ignored — either `payload.id` was missing or the event type is not a handled capture type |
+| `500 Internal Server Error` | An unexpected error occurred during transaction lookup or RepairDesk payment recording |

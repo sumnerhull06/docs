@@ -1,0 +1,76 @@
+---
+title: "Authenticate the bridge with RepairDesk and Authorize.Net"
+sidebarTitle: "Authentication"
+description: "Configure API key or OAuth 2.0 credentials for RepairDesk and API login credentials for Authorize.Net to connect the bridge."
+---
+
+The bridge needs credentials for two external services — RepairDesk (to read invoices and record payments) and Authorize.Net (to create hosted payment pages and verify webhooks). All credentials are loaded from environment variables at startup. Copy `.env.example` to `.env` and fill in the values before running the bridge.
+
+## RepairDesk authentication
+
+The bridge supports two authentication methods for the RepairDesk API. Choose one and set the corresponding variables in your `.env` file.
+
+### API key
+
+The simplest option is a RepairDesk API key. Set `REPAIRDESK_API_KEY` and the bridge will include it as an `x-api-key` request header on every RepairDesk API call. The key is also appended as an `api_key` query parameter for endpoints that require it.
+
+```bash
+# .env
+REPAIRDESK_BASE_URL=https://api.repairdesk.co/api/web/v1
+REPAIRDESK_API_KEY=your_repairdesk_api_key_here
+REPAIRDESK_PAYMENT_METHOD_ID=42
+```
+
+You can find your API key in your RepairDesk account under **Settings → API**.
+
+### OAuth 2.0
+
+If your RepairDesk account uses OAuth 2.0, set the OAuth variables instead. The bridge uses the refresh token to obtain a new access token automatically whenever the current one is within 15 seconds of expiry — you do not need to manage token rotation yourself.
+
+```bash
+# .env
+REPAIRDESK_BASE_URL=https://api.repairdesk.co/api/web/v1
+REPAIRDESK_OAUTH_CLIENT_ID=your_oauth_client_id
+REPAIRDESK_OAUTH_CLIENT_SECRET=your_oauth_client_secret
+REPAIRDESK_OAUTH_REFRESH_TOKEN=your_refresh_token
+# Optional — defaults shown below
+REPAIRDESK_OAUTH_TOKEN_PATH=/oauth2/token
+REPAIRDESK_OAUTH_EXPIRES_IN=3600
+REPAIRDESK_PAYMENT_METHOD_ID=42
+```
+
+<Note>
+  If both `REPAIRDESK_API_KEY` and the OAuth variables are set, OAuth takes precedence. The bridge uses the `Authorization: Bearer <token>` header and skips the API key entirely when OAuth credentials are present.
+</Note>
+
+## Authorize.Net credentials
+
+Obtain your API Login ID and Transaction Key from the Authorize.Net merchant dashboard under **Account → Settings → API Credentials & Keys**.
+
+```bash
+# .env
+AUTHORIZE_NET_ENV=production
+AUTHORIZE_NET_API_LOGIN_ID=your_api_login_id
+AUTHORIZE_NET_TRANSACTION_KEY=your_transaction_key
+```
+
+Set `AUTHORIZE_NET_ENV` to `production` for live transactions or `sandbox` for testing. The bridge uses this value to direct all Authorize.Net API calls to the correct endpoint.
+
+## Webhook signature verification
+
+Authorize.Net signs every webhook delivery with an HMAC-SHA512 hash of the raw request body, and includes the signature in the `x-anet-signature` header. Set `AUTHORIZE_NET_SIGNATURE_KEY` so the bridge can verify each incoming webhook before processing it.
+
+```bash
+# .env
+AUTHORIZE_NET_SIGNATURE_KEY=your_signature_key_here
+```
+
+You can find your Signature Key in the Authorize.Net merchant dashboard under **Account → Settings → API Credentials & Keys → Signature Key**.
+
+<Warning>
+  Without `AUTHORIZE_NET_SIGNATURE_KEY`, the bridge accepts all incoming webhook requests without any verification. An attacker who can reach your webhook endpoint could trigger fraudulent payment records in RepairDesk. Always set this variable in production.
+</Warning>
+
+<Tip>
+  Use sandbox credentials (`AUTHORIZE_NET_ENV=sandbox`) during development and testing. Sandbox and production credentials are completely separate — sandbox API Login IDs and Transaction Keys will not work against the production Authorize.Net endpoint, and vice versa. Switch to `AUTHORIZE_NET_ENV=production` and replace all three Authorize.Net variables when you are ready to go live.
+</Tip>

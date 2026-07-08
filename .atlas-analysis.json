@@ -1,13 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "RepairDesk Authorize.Net Bridge",
+  "projectType": "api-service",
+  "projectName": "RepairDesk Authorize.Net Bridge",
+  "projectDescription": "A self-hosted bridge service that connects RepairDesk invoices to Authorize.Net Accept Hosted checkout, automatically recording approved payments back into RepairDesk.",
   "theme": "luma",
-  "colors": {
-    "primary": "#0b63f6",
-    "light": "#e8f0fe",
-    "dark": "#0a3d8f"
-  },
-  "favicon": "/favicon.svg",
+  "primaryColor": "#0b63f6",
+  "lightColor": "#e8f0fe",
+  "darkColor": "#0a3d8f",
   "navigation": {
     "tabs": [
       {
@@ -64,10 +62,24 @@
       }
     ]
   },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/sumnerhull06/Repairdesk-api"
-    }
-  }
+  "keyFeatures": [
+    "Hosted Authorize.Net checkout — card data never touches your server",
+    "Automatic payment sync back to RepairDesk invoices after capture",
+    "Idempotent payment recording to prevent duplicate charges",
+    "Chrome extension and userscript to inject a pay button into RepairDesk POS",
+    "Session status polling for real-time payment confirmation",
+    "RepairDesk API key and OAuth 2.0 authentication support",
+    "Sandbox and production Authorize.Net environments"
+  ],
+  "publicApiSurface": [
+    "POST /api/payments/sessions",
+    "GET /api/payments/sessions/:sessionId",
+    "GET /launch",
+    "POST /webhooks/authorize-net",
+    "GET /checkout/:sessionId",
+    "GET /payments/return",
+    "GET /payments/cancel",
+    "GET /health",
+    "GET /oauth/repairdesk/callback"
+  ]
 }

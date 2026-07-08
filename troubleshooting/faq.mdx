@@ -1,0 +1,91 @@
+---
+title: "Frequently asked questions about the Authorize.Net Bridge"
+sidebarTitle: "FAQ"
+description: "Answers to common questions about the RepairDesk Authorize.Net Bridge, covering payments, security, compatibility, and supported features."
+---
+
+The questions below come up most often when setting up or operating the RepairDesk Authorize.Net Bridge. If you cannot find the answer here, check the [Common Issues](./common-issues) guide for step-by-step diagnosis of specific error conditions.
+
+<Accordion title="Does card data ever touch my server?">
+  No. The bridge only creates a payment session and retrieves a short-lived hosted payment token from Authorize.Net. Your customers enter their card details directly on Authorize.Net's PCI-compliant Accept Hosted page — that page is served entirely by Authorize.Net. Card numbers, CVVs, and expiry dates are never transmitted to or stored on the bridge server.
+</Accordion>
+
+<Accordion title="Can a payment be recorded twice in RepairDesk?">
+  No. The bridge is idempotent. Before writing a payment to RepairDesk, it checks whether the session already has a `repairDeskPaymentRecordedAt` timestamp set. If the timestamp is present, the bridge returns the existing session immediately without making another write to RepairDesk. This protects against double-recording if Authorize.Net retries a webhook or the same transaction ID is processed more than once.
+</Accordion>
+
+<Accordion title="What RepairDesk API version does the bridge use?">
+  The bridge uses RepairDesk Public API v1. All API calls are made against the base URL:
+
+  ```
+  https://api.repairdesk.co/api/web/v1
+  ```
+
+  The bridge uses three endpoints from that API: `GET /invoices/{invoiceId}`, `GET /invoices/{invoiceId}/dueamount`, and `POST /invoices/{invoiceId}/payments`.
+</Accordion>
+
+<Accordion title="Which Authorize.Net transaction types trigger payment recording?">
+  The bridge listens on `POST /webhooks/authorize-net` and processes the following Authorize.Net event types:
+
+  - `net.authorize.payment.authcapture.created`
+  - `net.authorize.payment.priorAuthCapture.created`
+  - `net.authorize.payment.capture.created`
+
+  Any other event type (for example, `net.authorize.payment.void.created`) is acknowledged with an HTTP 202 and ignored — no RepairDesk write occurs.
+</Accordion>
+
+<Accordion title="Can I charge a partial amount?">
+  Yes. Pass the `amount` field when creating a session via `POST /api/payments/sessions`, or include it as a query parameter on the `/launch` URL:
+
+  ```bash
+  GET /launch?invoiceId=12345&amount=49.99
+  ```
+
+  The amount must be a positive number and must not exceed the invoice's current due balance reported by RepairDesk. If you omit `amount`, the bridge charges the full outstanding balance.
+</Accordion>
+
+<Accordion title="Does the bridge support refunds?">
+  Not in the current version. Refunds and voids must be processed through the Authorize.Net merchant portal or directly inside RepairDesk. Refund support may be added in a future release once the capture flow is fully stable.
+</Accordion>
+
+<Accordion title="Can I use this with multiple RepairDesk accounts?">
+  Each bridge instance is configured for a single RepairDesk account through environment variables (`REPAIRDESK_API_KEY`, `REPAIRDESK_BASE_URL`, and so on). To support multiple RepairDesk accounts simultaneously, run separate bridge instances — each with its own `.env` file and its own port or domain — and point the Chrome extension at the appropriate bridge URL for each staff workstation.
+</Accordion>
+
+<Accordion title="Is the Chrome extension published to the Chrome Web Store?">
+  No. The extension is installed in Developer Mode by loading the unpacked extension folder directly from `browser/chrome-extension`. This is intentional — the extension is a staff-side tool that injects a button into RepairDesk POS for internal use and does not need to be publicly distributed through the Chrome Web Store.
+
+  <Info>
+    A prebuilt zip of the extension is included at `browser/repairdesk-authorizenet-extension.zip` if you need to distribute it to multiple staff machines without sharing the full source folder.
+  </Info>
+</Accordion>
+
+<Accordion title="What happens if the bridge is down when a payment completes?">
+  Authorize.Net retries webhook delivery for failed or unacknowledged requests. When the bridge comes back online, it will receive the retried event, look up the Authorize.Net transaction details, match the session, and record the payment in RepairDesk — exactly as it would have done the first time.
+
+  To check whether any retries are pending, log into your Authorize.Net dashboard and review the delivery history under **Account → Settings → Webhooks**. You can also manually verify a session once the bridge is running again:
+
+  ```bash
+  curl https://your-bridge-domain/api/payments/sessions/{sessionId}
+  ```
+
+  <Tip>
+    Always run the bridge behind a process manager (such as PM2 or systemd) so it restarts automatically after an unexpected shutdown and minimizes the window during which retries could be missed.
+  </Tip>
+</Accordion>
+
+<Accordion title="How do I confirm the bridge is running?">
+  Send a `GET` request to the `/health` endpoint. A healthy bridge responds with:
+
+  ```json
+  { "ok": true }
+  ```
+
+  You can check this from a terminal, a monitoring tool, or your browser:
+
+  ```bash
+  curl https://your-bridge-domain/health
+  ```
+
+  If the request times out or returns an error, the bridge process is not running or is not reachable on the expected host and port.
+</Accordion>

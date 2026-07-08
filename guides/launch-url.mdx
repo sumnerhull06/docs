@@ -1,0 +1,54 @@
+---
+title: "Launch checkout directly with the bridge launch URL"
+sidebarTitle: "Launch URL"
+description: "Use the /launch endpoint to create a payment session and redirect to Authorize.Net hosted checkout in a single step from any link or button."
+---
+
+The `/launch` endpoint is the simplest way to open the Authorize.Net hosted checkout for a RepairDesk invoice. Pass the invoice ID as a query parameter and the bridge handles everything else — it fetches the invoice, validates the outstanding balance, creates a payment session, and immediately redirects the browser to the Authorize.Net hosted checkout page. No client-side API call, no session token management, and no extra round trips are required.
+
+## Basic Usage
+
+```
+GET https://your-bridge.example.com/launch?invoiceId=12345
+```
+
+The bridge fetches invoice `12345` from RepairDesk, creates a payment session for the full due balance, and redirects the browser to the Authorize.Net hosted payment form. The customer sees the payment page within a single navigation.
+
+## All Query Parameters
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `invoiceId` | string | One of `invoiceId` / `ticketId` required | RepairDesk invoice ID to charge. |
+| `ticketId` | string | One of `invoiceId` / `ticketId` required | RepairDesk ticket ID. The bridge resolves it to an invoice before creating the session. |
+| `amount` | number | Optional | Override the charged amount. Must not exceed the invoice's current due balance. |
+| `customerEmail` | string | Optional | Pre-fills the email address field on the hosted checkout form. |
+| `customerFirstName` | string | Optional | Pre-fills the first name on the hosted checkout form. |
+| `customerLastName` | string | Optional | Pre-fills the last name on the hosted checkout form. |
+| `customerPhone` | string | Optional | Pre-fills the phone number on the hosted checkout form. |
+| `customerId` | string | Optional | RepairDesk customer ID. The bridge fetches the customer profile and uses it to pre-fill all available billing fields. |
+
+## Ticket Resolution
+
+When you pass `ticketId` instead of `invoiceId`, the bridge calls the RepairDesk tickets API, retrieves the ticket record, and searches the response for an associated invoice ID. It checks the following fields in order: `invoice_id`, `invoiceId`, `invoiceid`, `order_id`, `orderId`, `sale_id`, `saleId`. The first value that resolves to a valid RepairDesk invoice is used.
+
+<Info>
+  Use `invoiceId` directly whenever you have it. Ticket resolution adds a RepairDesk API call before the session can be created, which adds latency. Reserve `ticketId` for contexts — such as POS pages — where only the ticket number is readily available.
+</Info>
+
+## Use Cases
+
+<CardGroup cols={1}>
+  <Card title="Email and SMS invoice links" icon="envelope">
+    Include the launch URL in outbound invoice emails or SMS messages. When the customer clicks the link, they land directly on the Authorize.Net payment form for their invoice — no login or lookup required.
+  </Card>
+  <Card title="Staff launchers" icon="bookmark">
+    Save launch URLs as browser bookmarks, shortcuts, or inject them as buttons in other internal tools. Any staff member can open a specific invoice's payment page with a single click.
+  </Card>
+  <Card title="System integrations" icon="plug">
+    Redirect from another application — a CRM, field service tool, or workflow automation — directly to the launch URL to trigger payment collection at the right moment in your process.
+  </Card>
+</CardGroup>
+
+<Note>
+  If the invoice cannot be resolved — because the ID is invalid, the invoice no longer has an outstanding balance, or the RepairDesk API returns an error — the bridge displays an inline error page in the browser. No popup, no prompt, and no action is required from staff. The customer sees a clear message explaining that the payment could not be started.
+</Note>

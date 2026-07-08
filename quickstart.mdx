@@ -1,47 +1,140 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with the RepairDesk Authorize.Net Bridge"
+sidebarTitle: "Quickstart"
+description: "Install, configure, and make your first Authorize.Net payment through RepairDesk in under 10 minutes."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through cloning the bridge, wiring up your credentials, and processing a real payment session from start to finish. By the end you will have a running bridge, a completed Authorize.Net checkout, and a payment recorded in RepairDesk — all in under ten minutes.
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone and install">
+    Clone the repository and install its Node.js dependencies.
 
     ```bash
-    npm install your-package
+    git clone https://github.com/sumnerhull06/Repairdesk-api.git
+    cd Repairdesk-api
+    npm install
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Create your environment file">
+    Copy the example file and open it in your editor.
 
     ```bash
-    your-cli init
+    cp .env.example .env
+    ```
+
+    Fill in at minimum these seven variables:
+
+    ```ini title=".env"
+    # Public URL where this bridge is reachable (used in redirect URLs)
+    APP_BASE_URL=https://bridge.yourshop.com
+
+    # RepairDesk Public API v1 base URL
+    REPAIRDESK_BASE_URL=https://api.repairdesk.co/api/web/v1
+
+    # RepairDesk API key (omit if using OAuth instead)
+    REPAIRDESK_API_KEY=your-repairdesk-api-key
+
+    # The RepairDesk payment method ID that represents Authorize.Net
+    REPAIRDESK_PAYMENT_METHOD_ID=your-payment-method-id
+
+    # Use 'sandbox' while testing; switch to 'production' when you go live
+    AUTHORIZE_NET_ENV=sandbox
+
+    # Authorize.Net API login ID
+    AUTHORIZE_NET_API_LOGIN_ID=your-api-login-id
+
+    # Authorize.Net transaction key
+    AUTHORIZE_NET_TRANSACTION_KEY=your-transaction-key
     ```
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
+
+  <Step title="Start the bridge">
+    For local development, run:
 
     ```bash
-    your-cli start
+    npm run dev
+    ```
+
+    For a production deployment, build first and then start:
+
+    ```bash
+    npm run build && npm start
+    ```
+
+    When the server is ready you will see:
+
+    ```
+    RepairDesk bridge listening on port 3000
+    ```
+
+    You can confirm the bridge is healthy at any time:
+
+    ```bash
+    curl http://localhost:3000/health
+    # {"ok":true}
+    ```
+  </Step>
+
+  <Step title="Create your first payment session">
+    Send a `POST` request to `/api/payments/sessions` with the invoice details.
+
+    ```bash
+    curl -X POST http://localhost:3000/api/payments/sessions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "invoiceId": "12345",
+        "amount": 99.99,
+        "customerEmail": "customer@example.com",
+        "customerFirstName": "Alex",
+        "customerLastName": "Smith"
+      }'
+    ```
+
+    The bridge creates a local session, requests a hosted payment token from Authorize.Net, and responds with:
+
+    ```json
+    {
+      "sessionId": "sess_a1b2c3d4",
+      "checkoutUrl": "http://localhost:3000/checkout/sess_a1b2c3d4",
+      "statusUrl": "http://localhost:3000/api/payments/sessions/sess_a1b2c3d4"
+    }
+    ```
+  </Step>
+
+  <Step title="Open the checkout">
+    Open the `checkoutUrl` in a browser. The bridge renders a launcher page that immediately posts the hosted payment token to Authorize.Net, and Authorize.Net's own checkout page appears. The customer enters their card details directly on Authorize.Net's servers — card data never passes through the bridge.
+
+    <Tip>
+      During development you can also use the shortcut launch URL to skip the API call entirely:
+      `GET /launch?invoiceId=12345`
+      The bridge creates the session server-side and redirects straight into the hosted checkout.
+    </Tip>
+  </Step>
+
+  <Step title="Verify the payment">
+    After the customer submits payment, Authorize.Net fires a webhook to your bridge, which records the payment in RepairDesk and marks the session as `recorded`. Poll the `statusUrl` to confirm:
+
+    ```bash
+    curl http://localhost:3000/api/payments/sessions/sess_a1b2c3d4
+    ```
+
+    A successfully recorded session looks like this:
+
+    ```json
+    {
+      "sessionId": "sess_a1b2c3d4",
+      "invoiceId": "12345",
+      "amount": 99.99,
+      "status": "recorded",
+      "transactionId": "auth-net-txn-id",
+      "recordedAt": "2024-01-15T14:32:00.000Z"
+    }
     ```
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
-
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+<Note>
+  The steps above use the sandbox environment and do not require a live webhook. For production, you must configure Authorize.Net to POST webhook events to `POST /webhooks/authorize-net` on your publicly reachable bridge URL. See the **Webhook Setup** guide for full instructions.
+</Note>

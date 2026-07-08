@@ -1,0 +1,67 @@
+---
+title: "Inject the Authorize.Net Pay button with a userscript"
+sidebarTitle: "Userscript"
+description: "Use Tampermonkey or Violentmonkey to install the RepairDesk Authorize.Net userscript and inject a pay button into RepairDesk."
+---
+
+If you prefer not to install a packaged browser extension, the Tampermonkey or Violentmonkey userscript provides the same **Authorize.Net Pay** button injection using a single JavaScript file you can read, modify, and version-control yourself. It runs in any browser that supports userscript managers — Chrome, Firefox, or Edge — and takes about two minutes to set up.
+
+## Prerequisites
+
+Install one of the following userscript managers in your browser before proceeding:
+
+<CardGroup cols={2}>
+  <Card title="Tampermonkey" icon="chrome">
+    Available for Chrome, Edge, Firefox, and Safari. The most widely used userscript manager.
+  </Card>
+  <Card title="Violentmonkey" icon="firefox-browser">
+    Open-source alternative available for Chrome and Firefox. Compatible with the same script format.
+  </Card>
+</CardGroup>
+
+## Install
+
+<Steps>
+  <Step title="Install a userscript manager">
+    Install Tampermonkey or Violentmonkey from your browser's extension store if you have not already done so.
+  </Step>
+  <Step title="Open the userscript file">
+    Open `browser/repairdesk-authorizenet.user.js` from your local copy of the repository in any text editor or directly in your browser.
+  </Step>
+  <Step title="Copy the script content">
+    Select and copy the entire contents of the file.
+  </Step>
+  <Step title="Create a new script in Tampermonkey or Violentmonkey">
+    Open the Tampermonkey (or Violentmonkey) dashboard from the browser toolbar icon, then click **Create a new script** (Tampermonkey) or the **+** button (Violentmonkey).
+  </Step>
+  <Step title="Paste and save the script">
+    Clear the default template content, paste the copied script, and save with **Ctrl+S** or the save button.
+  </Step>
+  <Step title="Set your bridge URL">
+    Find the `BRIDGE_BASE_URL` constant near the top of the pasted script and update its value to point to your running bridge instance. See [Customizing the Bridge URL](#customizing-the-bridge-url) below for the exact line to edit.
+  </Step>
+</Steps>
+
+## What the Script Does
+
+After installation, the userscript runs automatically on all `*.repairdesk.co` pages. Here is what it provides:
+
+- **Floating button** — adds a fixed-position **Authorize.Net Pay** button on all RepairDesk pages so it is always reachable.
+- **Inline placement** — on POS checkout pages, moves the button inline next to the **Checkout** button (or inside the payment dialog) when possible, so it feels like a native action.
+- **Automatic invoice detection** — reads the invoice ID from the current URL, page content, DOM attributes, or a visible Invoice History table without opening any dialogs.
+- **Silent POS list fallback** — if the invoice ID is not available on the current page, the script silently fetches the POS invoice list in the background and matches by amount and customer context.
+- **Bridge redirect** — on click, constructs a `/launch?invoiceId=...` URL on your bridge and navigates there in the same tab, triggering session creation and Authorize.Net checkout automatically.
+
+## Customizing the Bridge URL
+
+Update the first constant in the script to point to your bridge server:
+
+```js userscript.js
+const BRIDGE_BASE_URL = 'https://your-bridge.example.com';
+```
+
+The default value is `http://localhost:3000`. Change this once and every launch URL the script generates will use the new value. After editing, save the script — the change takes effect immediately on the next RepairDesk page load.
+
+<Note>
+  The packaged Chrome extension (MV3) is the recommended option for teams, because the bridge URL is stored in `chrome.storage.sync` and can be updated from the extension Options page without editing code. The userscript is a better fit for individual staff members who want a quick, single-file setup or who need to customize the button behavior directly.
+</Note>
